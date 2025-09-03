@@ -20,7 +20,8 @@ def main():
     assert img1.shape[1] > img1.shape[0], "Image 1 should be a wide image"
     assert img2.shape[0] > img2.shape[1], "Image 2 should be a tall image"
 
-    # No need to create PNG copies - using JPG files directly
+    cv2.imwrite('ps1-1-a-1.png', img1)
+    cv2.imwrite('ps1-1-a-2.png', img2)
 
     # # 2 Color Planes
 

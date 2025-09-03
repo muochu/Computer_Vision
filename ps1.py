@@ -172,7 +172,9 @@ def copy_paste_middle_circle(src, dst, radius):
     circle_mask = (x_patch - patch_center)**2 + (y_patch - patch_center)**2 <= radius**2
     
     # Copy the circular region using the mask
-    temp_dst[dst_start_h:dst_end_h, dst_start_w:dst_end_w][circle_mask] = src_patch[circle_mask]
+    dst_patch = temp_dst[dst_start_h:dst_end_h, dst_start_w:dst_end_w]
+    dst_patch[circle_mask] = src_patch[circle_mask]
+    temp_dst[dst_start_h:dst_end_h, dst_start_w:dst_end_w] = dst_patch
     
     return temp_dst
 
@@ -199,11 +201,11 @@ def image_stats(image):
     # Make a copy to avoid modifying the original
     temp_image = np.copy(image)
     
-    # Calculate statistics using numpy functions
-    min_val = np.min(temp_image)
-    max_val = np.max(temp_image)
-    mean_val = np.mean(temp_image)
-    stddev_val = np.std(temp_image)
+    # Calculate statistics using numpy functions and convert to float
+    min_val = float(np.min(temp_image))
+    max_val = float(np.max(temp_image))
+    mean_val = float(np.mean(temp_image))
+    stddev_val = float(np.std(temp_image))
     
     return (min_val, max_val, mean_val, stddev_val)
 
@@ -311,12 +313,17 @@ def difference_image(img1, img2):
     # Calculate difference (img1 - img2) - may be negative
     diff = temp_img1 - temp_img2
     
-    # Use offset method: add 128 to center zero-difference at middle gray
-    # This makes negative differences visible as darker and positive as lighter
-    offset_diff = diff + 128
+    # Use min-max normalization to scale to [0, 255]
+    min_diff = np.min(diff)
+    max_diff = np.max(diff)
     
-    # Clip to valid range [0, 255] and convert to uint8
-    result = np.clip(offset_diff, 0, 255).astype(np.uint8)
+    if max_diff - min_diff != 0:
+        normalized_diff = ((diff - min_diff) / (max_diff - min_diff)) * 255
+    else:
+        normalized_diff = np.zeros_like(diff)
+    
+    # Convert to uint8
+    result = normalized_diff.astype(np.uint8)
     
     return result
 
