@@ -154,7 +154,6 @@ def copy_paste_middle_circle(src, dst, radius):
     sh, sw = int(src.shape[0]), int(src.shape[1])
     dh, dw = int(dst.shape[0]), int(dst.shape[1])
 
-    # patch size (odd) centered on center pixel
     patch_h = min(2 * r + 1, sh)
     patch_w = min(2 * r + 1, sw)
 
@@ -174,16 +173,12 @@ def copy_paste_middle_circle(src, dst, radius):
     ph, pw = src_patch.shape
     cy, cx = ph // 2, pw // 2  
 
-    # Create circular mask and copy pixels
-    # vectorized mask creation
     yy = _np.arange(ph).reshape(ph, 1) - cy
     xx = _np.arange(pw).reshape(1, pw) - cx
     mask = (yy * yy + xx * xx) <= (r * r)
 
-    # Copy masked pixels from src_patch into dst_region
     dst_region[mask] = src_patch[mask]
 
-    # Put modified region back into destination
     temp_dst[dst_start_y:dst_end_y, dst_start_x:dst_end_x] = dst_region
 
     return temp_dst
@@ -211,7 +206,6 @@ def image_stats(image):
     # Make a copy to avoid modifying the original
     temp_image = np.copy(image)
     
-    # Calculate statistics using numpy functions and convert to float
     min_val = float(np.min(temp_image))
     max_val = float(np.max(temp_image))
     mean_val = float(np.mean(temp_image))
