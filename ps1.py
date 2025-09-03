@@ -169,23 +169,17 @@ def copy_paste_middle_circle(src, dst, radius):
     # Create circular mask for the patch
     patch_h, patch_w = src_patch.shape
     
-    # Create coordinate grids
-    y_coords = np.arange(patch_h).reshape(-1, 1)
-    x_coords = np.arange(patch_w).reshape(1, -1)
-    
-    # Calculate distances from center
-    center_y = patch_h // 2
-    center_x = patch_w // 2
-    
-    # Create circular mask
-    y_dist = (y_coords - center_y) ** 2
-    x_dist = (x_coords - center_x) ** 2
-    distances = y_dist + x_dist
-    circle_mask = distances <= (radius ** 2)
-    
-    # Apply mask
-    dst_patch = temp_dst[dst_start_h:dst_end_h, dst_start_w:dst_end_w]
-    dst_patch[circle_mask] = src_patch[circle_mask]
+    # Simple loop-based approach to avoid indexing issues
+    for i in range(patch_h):
+        for j in range(patch_w):
+            # Calculate distance from center of patch
+            center_y = patch_h // 2
+            center_x = patch_w // 2
+            dist_squared = (i - center_y) ** 2 + (j - center_x) ** 2
+            
+            # If within radius, copy pixel
+            if dist_squared <= radius ** 2:
+                dst_patch[i, j] = src_patch[i, j]
     
     return temp_dst
 
