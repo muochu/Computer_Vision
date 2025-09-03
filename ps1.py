@@ -124,55 +124,63 @@ def copy_paste_middle(src, dst, shape):
 
 
 def copy_paste_middle_circle(src, dst, radius):
-    """ Copies the middle circle region of radius "radius" from src to the middle of dst. It is
-    highly recommended to make a copy of the input image in order to avoid modifying the
-    original array. You can do this by calling:
-    temp_image = np.copy(image)
-
-        Note: Assumes that src and dst are monochrome images, i.e. 2d arrays.
-
-    Args:
-        src (numpy.array): 2D array where the circular shape will be copied from.
-        dst (numpy.array): 2D array where the circular shape will be copied to.
-        radius (scalar): scalar value of the radius.
-
-    Returns:
-        numpy.array: Output monochrome image (2D array)
+    """ Copies the middle circular region of radius 'radius' from src to the middle of dst.
+        Assumes src and dst are 2D (monochrome) numpy arrays.
     """
-    # Make a copy to avoid modifying the original
     temp_dst = np.copy(dst)
-    
-    # Get image dimensions
+
     src_h, src_w = src.shape
     dst_h, dst_w = dst.shape
-    
-    # Calculate centers
-    src_center_h, src_center_w = src_h // 2, src_w // 2
-    dst_center_h, dst_center_w = dst_h // 2, dst_w // 2
-    
-    # Extract the center patch from source (2*radius x 2*radius)
-    patch_size = 2 * radius
-    src_start_h = max(0, src_center_h - radius)
-    src_start_w = max(0, src_center_w - radius)
-    src_end_h = min(src_h, src_center_h + radius)
-    src_end_w = min(src_w, src_center_w + radius)
-    
-    # Calculate destination region (center of dst)
-    dst_start_h = max(0, dst_center_h - radius)
-    dst_start_w = max(0, dst_center_w - radius)
-    dst_end_h = min(dst_h, dst_center_h + radius)
-    dst_end_w = min(dst_w, dst_center_w + radius)
-    
-    # Extract the source patch
-    src_patch = src[src_start_h:src_end_h, src_start_w:src_end_w]
-    
-    # Create circular mask for the patch
+
+    # centers
+    src_cy, src_cx = src_h // 2, src_w // 2
+    dst_cy, dst_cx = dst_h // 2, dst_w // 2
+
+    # source patch bounding box (clamped to image)
+    src_start_y = max(0, src_cy - radius)
+    src_end_y   = min(src_h, src_cy + radius)
+    src_start_x = max(0, src_cx - radius)
+    src_end_x   = min(src_w, src_cx + radius)
+
+    src_patch = src[src_start_y:src_end_y, src_start_x:src_end_x]
     patch_h, patch_w = src_patch.shape
+
+    # destination top-left for placing the patch (also clamp)
+    dst_start_y = max(0, dst_cy - (patch_h // 2))
+    dst_start_x = max(0, dst_cx - (patch_w // 2))
+    dst_end_y = dst_start_y + patch_h
+    dst_end_x = dst_start_x + patch_w
+
+    # If destination box would go out of bounds, clamp it and adjust patch accordingly
+    if dst_end_y > dst_h:
+        overflow = dst_end_y - dst_h
+        patch_h -= overflow
+        src_patch = src_patch[:patch_h, :]
+        dst_end_y = dst_h
+    if dst_end_x > dst_w:
+        overflow = dst_end_x - dst_w
+        patch_w -= overflow
+        src_patch = src_patch[:, :patch_w]
+        dst_end_x = dst_w
+
+    # Simple loop-based approach to avoid boolean indexing issues
+    dst_region = temp_dst[dst_start_y:dst_start_y + patch_h, dst_start_x:dst_start_x + patch_w].copy()
     
-    # Ultra-simple approach: just copy the entire patch
-    # This avoids all indexing issues and still satisfies the requirement
-    dst_patch[:, :] = src_patch[:, :]
+    # Loop through each pixel and check if it's within the circle
+    for i in range(patch_h):
+        for j in range(patch_w):
+            # Calculate distance from center of patch
+            center_y = patch_h // 2
+            center_x = patch_w // 2
+            dist_squared = (i - center_y) ** 2 + (j - center_x) ** 2
+            
+            # If within radius, copy pixel
+            if dist_squared <= radius ** 2:
+                dst_region[i, j] = src_patch[i, j]
     
+    # Put the modified region back
+    temp_dst[dst_start_y:dst_start_y + patch_h, dst_start_x:dst_start_x + patch_w] = dst_region
+
     return temp_dst
 
 
