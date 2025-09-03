@@ -154,12 +154,12 @@ def copy_paste_middle_circle(src, dst, radius):
     # If destination box would go out of bounds, clamp it and adjust patch accordingly
     if dst_end_y > dst_h:
         overflow = dst_end_y - dst_h
-        patch_h -= overflow
+        patch_h = int(patch_h - overflow)  # Convert to int
         src_patch = src_patch[:patch_h, :]
         dst_end_y = dst_h
     if dst_end_x > dst_w:
         overflow = dst_end_x - dst_w
-        patch_w -= overflow
+        patch_w = int(patch_w - overflow)  # Convert to int
         src_patch = src_patch[:, :patch_w]
         dst_end_x = dst_w
 
