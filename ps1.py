@@ -126,37 +126,65 @@ def copy_paste_middle(src, dst, shape):
 def copy_paste_middle_circle(src, dst, radius):
     """
     Copy the circular center region of radius `radius` from src into the center of dst.
-    Both src and dst are 2D numpy arrays (grayscale). Returns a new dst copy.
-    This implementation uses integer indices only and handles edge clipping.
+    Both src and dst are expected to be 2D numpy arrays (grayscale). Returns a new dst copy.
+
+    Notes:
+    - Uses the floor-centering convention: start = (N - patch_size)//2
+    - patch_size = 2*radius + 1 so the circle includes the center pixel
+    - Handles radius supplied as numpy array/scalar by converting to int
     """
-    temp_dst = np.copy(dst)
+    import numpy as _np
 
-    src_h, src_w = src.shape
-    dst_h, dst_w = dst.shape
+    src = _np.asarray(src)
+    dst = _np.asarray(dst)
 
-    # centers (integers)
-    src_cy, src_cx = src_h // 2, src_w // 2
-    dst_cy, dst_cx = dst_h // 2, dst_w // 2
+    if src.ndim != 2 or dst.ndim != 2:
+        raise ValueError("copy_paste_middle_circle expects 2D (grayscale) src and dst")
 
-    # bounding box in destination to examine (clamped to image)
-    y0 = max(0, dst_cy - radius)
-    y1 = min(dst_h, dst_cy + radius + 1)  # +1 because range end is exclusive
-    x0 = max(0, dst_cx - radius)
-    x1 = min(dst_w, dst_cx + radius + 1)
+    try:
+        r = int(_np.array(radius).item())
+    except Exception:
+        r = int(radius)
 
-    # Loop over the bounding box in destination coordinates
-    for dy in range(y0, y1):
-        for dx in range(x0, x1):
-            # distance from center in destination
-            dyc = dy - dst_cy
-            dxc = dx - dst_cx
-            if dyc*dyc + dxc*dxc <= radius*radius:
-                # corresponding source coordinate
-                sy = src_cy + dyc
-                sx = src_cx + dxc
-                # copy only if source coordinate is inside src bounds
-                if 0 <= sy < src_h and 0 <= sx < src_w:
-                    temp_dst[dy, dx] = src[sy, sx]
+    if r <= 0:
+        return dst.copy()
+
+    temp_dst = dst.copy()
+
+    sh, sw = int(src.shape[0]), int(src.shape[1])
+    dh, dw = int(dst.shape[0]), int(dst.shape[1])
+
+    # patch size (odd) centered on center pixel
+    patch_h = min(2 * r + 1, sh)
+    patch_w = min(2 * r + 1, sw)
+
+    src_start_y = (sh - patch_h) // 2
+    src_start_x = (sw - patch_w) // 2
+    src_end_y = src_start_y + patch_h
+    src_end_x = src_start_x + patch_w
+
+    dst_start_y = (dh - patch_h) // 2
+    dst_start_x = (dw - patch_w) // 2
+    dst_end_y = dst_start_y + patch_h
+    dst_end_x = dst_start_x + patch_w
+
+    src_patch = src[src_start_y:src_end_y, src_start_x:src_end_x]
+    dst_region = temp_dst[dst_start_y:dst_end_y, dst_start_x:dst_end_x].copy()
+
+    ph, pw = src_patch.shape
+    cy, cx = ph // 2, pw // 2  
+
+    # Create circular mask and copy pixels
+    # vectorized mask creation
+    yy = _np.arange(ph).reshape(ph, 1) - cy
+    xx = _np.arange(pw).reshape(1, pw) - cx
+    mask = (yy * yy + xx * xx) <= (r * r)
+
+    # Copy masked pixels from src_patch into dst_region
+    dst_region[mask] = src_patch[mask]
+
+    # Put modified region back into destination
+    temp_dst[dst_start_y:dst_end_y, dst_start_x:dst_end_x] = dst_region
 
     return temp_dst
 
