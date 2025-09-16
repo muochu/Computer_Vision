@@ -26,7 +26,107 @@ def traffic_light_detection(img_in, radii_range):
         state (str): traffic light state. A value in {'red', 'yellow',
                      'green'}
     """
-    raise NotImplementedError
+    gray = cv2.cvtColor(img_in, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    
+    circles = cv2.HoughCircles(
+        blurred,
+        cv2.HOUGH_GRADIENT,
+        dp=1,
+        minDist=20,
+        param1=30,
+        param2=20,
+        minRadius=min(radii_range),
+        maxRadius=max(radii_range)
+    )
+    
+    if circles is None:
+        return (0, 0), 'red'
+    
+    circles = np.round(circles[0, :]).astype("int")
+    circles = sorted(circles, key=lambda x: x[1])
+    
+    if len(circles) < 3:
+        center_x, center_y, _ = circles[0]
+        return (center_x, center_y), 'red'
+    
+    top_circle = circles[0]
+    middle_circle = circles[1] 
+    bottom_circle = circles[2]
+    center_x, center_y, _ = middle_circle
+    
+    hsv = cv2.cvtColor(img_in, cv2.COLOR_BGR2HSV)
+    
+    red_lower1 = np.array([0, 50, 50])
+    red_upper1 = np.array([10, 255, 255])
+    red_lower2 = np.array([170, 50, 50])
+    red_upper2 = np.array([180, 255, 255])
+    yellow_lower = np.array([20, 50, 50])
+    yellow_upper = np.array([30, 255, 255])
+    green_lower = np.array([40, 50, 50])
+    green_upper = np.array([80, 255, 255])
+    
+    def check_circle_color(circle, hsv_img):
+        x, y, r = circle
+        mask = np.zeros(hsv_img.shape[:2], dtype=np.uint8)
+        cv2.circle(mask, (x, y), r, 255, -1)
+        circle_pixels = hsv_img[mask > 0]
+        
+        if len(circle_pixels) == 0:
+            return 'off'
+        
+        red_mask1 = cv2.inRange(circle_pixels.reshape(-1, 1, 3), red_lower1, red_upper1)
+        red_mask2 = cv2.inRange(circle_pixels.reshape(-1, 1, 3), red_lower2, red_upper2)
+        red_pixels = np.sum(red_mask1) + np.sum(red_mask2)
+        
+        yellow_mask = cv2.inRange(circle_pixels.reshape(-1, 1, 3), yellow_lower, yellow_upper)
+        yellow_pixels = np.sum(yellow_mask)
+        
+        green_mask = cv2.inRange(circle_pixels.reshape(-1, 1, 3), green_lower, green_upper)
+        green_pixels = np.sum(green_mask)
+        
+        max_pixels = max(red_pixels, yellow_pixels, green_pixels)
+        
+        if max_pixels < 50:
+            return 'off'
+        elif red_pixels == max_pixels:
+            return 'red'
+        elif yellow_pixels == max_pixels:
+            return 'yellow'
+        elif green_pixels == max_pixels:
+            return 'green'
+        else:
+            return 'off'
+    
+    top_color = check_circle_color(top_circle, hsv)
+    middle_color = check_circle_color(middle_circle, hsv)
+    bottom_color = check_circle_color(bottom_circle, hsv)
+    
+    if top_color == 'red':
+        state = 'red'
+    elif middle_color == 'yellow':
+        state = 'yellow'
+    elif bottom_color == 'green':
+        state = 'green'
+    else:
+        def get_brightness(circle, gray_img):
+            x, y, r = circle
+            mask = np.zeros(gray_img.shape, dtype=np.uint8)
+            cv2.circle(mask, (x, y), r, 255, -1)
+            return np.mean(gray_img[mask > 0])
+        
+        top_brightness = get_brightness(top_circle, gray)
+        middle_brightness = get_brightness(middle_circle, gray)
+        bottom_brightness = get_brightness(bottom_circle, gray)
+        
+        if top_brightness > middle_brightness and top_brightness > bottom_brightness:
+            state = 'red'
+        elif middle_brightness > top_brightness and middle_brightness > bottom_brightness:
+            state = 'yellow'
+        else:
+            state = 'green'
+    
+    return (center_x, center_y), state
 
 
 def construction_sign_detection(img_in):
