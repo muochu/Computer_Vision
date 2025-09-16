@@ -410,7 +410,42 @@ def compress_image_fft(img_bgr, threshold_percentage):
         compressed_frequency_img (np.array): numpy array of shape (n,m,3) representing the compressed image in the frequency domain
 
     """
-    raise NotImplementedError
+    img_bgr = img_bgr.astype(np.float64)
+    h, w, c = img_bgr.shape
+    
+    img_compressed = np.zeros_like(img_bgr, dtype=np.float64)
+    compressed_frequency_img = np.zeros_like(img_bgr, dtype=np.complex128)
+    
+    # Process each color channel
+    for channel in range(c):
+        # Convert channel to frequency domain
+        channel_freq = dft2(img_bgr[:, :, channel])
+        
+        # Get magnitude and flatten for sorting
+        magnitude = np.abs(channel_freq)
+        magnitude_flat = magnitude.flatten()
+        
+        # Sort frequencies from greatest to least
+        sorted_indices = np.argsort(magnitude_flat)[::-1]
+        
+        # Find threshold index
+        threshold_index = int(np.floor(threshold_percentage * len(magnitude_flat)))
+        threshold_value = magnitude_flat[sorted_indices[threshold_index]]
+        
+        # Create mask for frequencies above threshold
+        mask = magnitude >= threshold_value
+        
+        # Apply mask to frequency domain
+        masked_freq = channel_freq * mask
+        
+        # Convert back to spatial domain
+        channel_compressed = np.real(idft2(masked_freq))
+        
+        # Store results
+        img_compressed[:, :, channel] = channel_compressed
+        compressed_frequency_img[:, :, channel] = masked_freq
+    
+    return img_compressed, compressed_frequency_img
 
 
 def low_pass_filter(img_bgr, r):
