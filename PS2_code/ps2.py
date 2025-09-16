@@ -316,8 +316,18 @@ def dft(x):
         y (np.array): 1-dimensional numpy array of shape (n,) representing Fourier Transformed Signal
 
     """
-    x = np.asarray(x, dtype=np.complex_)
-    raise NotImplementedError
+    x = np.asarray(x, dtype=np.complex128)
+    N = len(x)
+    n = np.arange(N)
+    k = n.reshape((N, 1))
+    
+    # Create the DFT matrix: e^(-2πi*k*n/N)
+    dft_matrix = np.exp(-2j * np.pi * k * n / N)
+    
+    # Apply DFT: X[k] = sum(x[n] * e^(-2πi*k*n/N))
+    y = np.dot(dft_matrix, x)
+    
+    return y
 
 
 def idft(x):
@@ -328,8 +338,18 @@ def idft(x):
         y (np.array): 1-dimensional numpy array of shape (n,) representing signal
 
     """
-    x = np.asarray(x, dtype=np.complex_)
-    raise NotImplementedError
+    x = np.asarray(x, dtype=np.complex128)
+    N = len(x)
+    n = np.arange(N)
+    k = n.reshape((N, 1))
+    
+    # Create the IDFT matrix: e^(2πi*k*n/N)
+    idft_matrix = np.exp(2j * np.pi * k * n / N)
+    
+    # Apply IDFT: x[n] = (1/N) * sum(X[k] * e^(2πi*k*n/N))
+    y = np.dot(idft_matrix, x) / N
+    
+    return y
 
 
 def dft2(img):
@@ -340,7 +360,20 @@ def dft2(img):
         y (np.array): 2-dimensional numpy array of shape (n,m) representing Fourier-Transformed image
 
     """
-    raise NotImplementedError
+    img = np.asarray(img, dtype=np.complex128)
+    rows, cols = img.shape
+    
+    # Apply 1D DFT to each row
+    dft_rows = np.zeros_like(img, dtype=np.complex128)
+    for i in range(rows):
+        dft_rows[i, :] = dft(img[i, :])
+    
+    # Apply 1D DFT to each column of the result
+    dft_result = np.zeros_like(img, dtype=np.complex128)
+    for j in range(cols):
+        dft_result[:, j] = dft(dft_rows[:, j])
+    
+    return dft_result
 
 
 def idft2(img):
@@ -351,7 +384,20 @@ def idft2(img):
         y (np.array): 2-dimensional numpy array of shape (n,m) representing image
 
     """
-    raise NotImplementedError
+    img = np.asarray(img, dtype=np.complex128)
+    rows, cols = img.shape
+    
+    # Apply 1D IDFT to each column
+    idft_cols = np.zeros_like(img, dtype=np.complex128)
+    for j in range(cols):
+        idft_cols[:, j] = idft(img[:, j])
+    
+    # Apply 1D IDFT to each row of the result
+    idft_result = np.zeros_like(img, dtype=np.complex128)
+    for i in range(rows):
+        idft_result[i, :] = idft(idft_cols[i, :])
+    
+    return idft_result
 
 
 def compress_image_fft(img_bgr, threshold_percentage):
