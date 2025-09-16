@@ -458,4 +458,36 @@ def low_pass_filter(img_bgr, r):
         low_pass_frequency_img (np.array): numpy array of shape (n,m,3) representing the low pass filtered image in the frequency domain
 
     """
-    raise NotImplementedError
+    img_bgr = img_bgr.astype(np.float64)
+    h, w, c = img_bgr.shape
+    
+    img_low_pass = np.zeros_like(img_bgr, dtype=np.float64)
+    low_pass_frequency_img = np.zeros_like(img_bgr, dtype=np.complex128)
+    
+    # Create circular mask
+    center_y, center_x = h // 2, w // 2
+    y, x = np.ogrid[:h, :w]
+    mask = (x - center_x) ** 2 + (y - center_y) ** 2 <= r ** 2
+    
+    # Process each color channel
+    for channel in range(c):
+        # Convert channel to frequency domain
+        channel_freq = dft2(img_bgr[:, :, channel])
+        
+        # Shift frequencies so low frequencies are at center
+        channel_freq_shifted = np.fft.fftshift(channel_freq)
+        
+        # Apply circular mask
+        masked_freq_shifted = channel_freq_shifted * mask
+        
+        # Undo the shift
+        masked_freq = np.fft.ifftshift(masked_freq_shifted)
+        
+        # Convert back to spatial domain
+        channel_filtered = np.real(idft2(masked_freq))
+        
+        # Store results
+        img_low_pass[:, :, channel] = channel_filtered
+        low_pass_frequency_img[:, :, channel] = masked_freq
+    
+    return img_low_pass, low_pass_frequency_img
