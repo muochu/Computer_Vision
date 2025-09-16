@@ -228,41 +228,74 @@ def template_match(img_orig, img_template, method):
        Suggestion : For loops in python are notoriously slow
        Can we find a vectorized solution to make it faster?
     """
-    result = np.zeros(
-        (
-            (img_orig.shape[0] - img_template.shape[0] + 1),
-            (img_orig.shape[1] - img_template.shape[1] + 1),
-        ),
-        float,
-    )
-    top_left = []
-    """Once you have populated the result matrix with the similarity metric corresponding to each overlap, return the topmost and leftmost pixel of
-    the matched window from the result matrix. You may look at Open CV and numpy post processing functions to extract location of maximum match"""
-    # Sum of squared differences
+    # Convert to grayscale if needed
+    if len(img_orig.shape) == 3:
+        img_orig = cv2.cvtColor(img_orig, cv2.COLOR_BGR2GRAY)
+    if len(img_template.shape) == 3:
+        img_template = cv2.cvtColor(img_template, cv2.COLOR_BGR2GRAY)
+    
+    # Convert to float64 for calculations
+    img_orig = img_orig.astype(np.float64)
+    img_template = img_template.astype(np.float64)
+    
+    # Calculate result matrix dimensions
+    h_orig, w_orig = img_orig.shape
+    h_template, w_template = img_template.shape
+    result_h = h_orig - h_template + 1
+    result_w = w_orig - w_template + 1
+    
     if method == "tm_ssd":
-        """Your code goes here"""
-        raise NotImplementedError
-
-    # Normalized sum of squared differences
+        # Sum of Squared Differences - minimize for best match
+        result = np.zeros((result_h, result_w), dtype=np.float64)
+        for i in range(result_h):
+            for j in range(result_w):
+                window = img_orig[i:i+h_template, j:j+w_template]
+                result[i, j] = np.sum((window - img_template) ** 2)
+        top_left = np.unravel_index(np.argmin(result), result.shape)
+    
     elif method == "tm_nssd":
-        """Your code goes here"""
-        raise NotImplementedError
-
-    # Cross Correlation
+        # Normalized Sum of Squared Differences
+        result = np.zeros((result_h, result_w), dtype=np.float64)
+        template_norm = np.sqrt(np.sum(img_template ** 2))
+        for i in range(result_h):
+            for j in range(result_w):
+                window = img_orig[i:i+h_template, j:j+w_template]
+                window_norm = np.sqrt(np.sum(window ** 2))
+                if window_norm > 0:
+                    result[i, j] = np.sum((window - img_template) ** 2) / (template_norm * window_norm)
+                else:
+                    result[i, j] = float('inf')
+        top_left = np.unravel_index(np.argmin(result), result.shape)
+    
     elif method == "tm_ccor":
-        """Your code goes here"""
-        raise NotImplementedError
-
-    # Normalized Cross Correlation
+        # Cross Correlation - use filter2D for efficiency
+        result = cv2.filter2D(img_orig, -1, img_template)
+        top_left = np.unravel_index(np.argmax(result), result.shape)
+    
     elif method == "tm_nccor":
-        """Your code goes here"""
-        raise NotImplementedError
-
+        # Normalized Cross Correlation with mean centering
+        template_mean = np.mean(img_template)
+        template_centered = img_template - template_mean
+        template_norm = np.sqrt(np.sum(template_centered ** 2))
+        
+        result = np.zeros((result_h, result_w), dtype=np.float64)
+        for i in range(result_h):
+            for j in range(result_w):
+                window = img_orig[i:i+h_template, j:j+w_template]
+                window_mean = np.mean(window)
+                window_centered = window - window_mean
+                window_norm = np.sqrt(np.sum(window_centered ** 2))
+                
+                if template_norm > 0 and window_norm > 0:
+                    result[i, j] = np.sum(template_centered * window_centered) / (template_norm * window_norm)
+                else:
+                    result[i, j] = 0
+        top_left = np.unravel_index(np.argmax(result), result.shape)
+    
     else:
-        """Your code goes here"""
-        # Invalid technique
-    raise NotImplementedError
-    return top_left
+        raise ValueError("Invalid method")
+    
+    return (int(top_left[1]), int(top_left[0]))
 
 
 '''Below is the helper code to print images for the report'''
