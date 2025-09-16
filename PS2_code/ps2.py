@@ -137,7 +137,79 @@ def construction_sign_detection(img_in):
     Returns:
         (x,y) tuple of the coordinates of the center of the sign.
     """
-    raise NotImplementedError
+    gray = cv2.cvtColor(img_in, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    
+    edges = cv2.Canny(blurred, 50, 150)
+    
+    lines = cv2.HoughLinesP(
+        edges,
+        rho=1,
+        theta=np.pi/180,
+        threshold=50,
+        minLineLength=30,
+        maxLineGap=10
+    )
+    
+    if lines is None:
+        return (0, 0)
+    
+    hsv = cv2.cvtColor(img_in, cv2.COLOR_BGR2HSV)
+    
+    orange_lower = np.array([10, 100, 100])
+    orange_upper = np.array([25, 255, 255])
+    yellow_lower = np.array([20, 100, 100])
+    yellow_upper = np.array([30, 255, 255])
+    
+    orange_mask = cv2.inRange(hsv, orange_lower, orange_upper)
+    yellow_mask = cv2.inRange(hsv, yellow_lower, yellow_upper)
+    color_mask = cv2.bitwise_or(orange_mask, yellow_mask)
+    
+    intersections = []
+    
+    for i in range(len(lines)):
+        for j in range(i + 1, len(lines)):
+            x1, y1, x2, y2 = lines[i][0]
+            x3, y3, x4, y4 = lines[j][0]
+            
+            denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+            if abs(denom) > 1e-6:
+                t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom
+                u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom
+                
+                if 0 <= t <= 1 and 0 <= u <= 1:
+                    px = int(x1 + t * (x2 - x1))
+                    py = int(y1 + t * (y2 - y1))
+                    
+                    if 0 <= px < img_in.shape[1] and 0 <= py < img_in.shape[0]:
+                        if color_mask[py, px] > 0:
+                            intersections.append((px, py))
+    
+    if not intersections:
+        return (0, 0)
+    
+    intersections = np.array(intersections)
+    
+    if len(intersections) < 4:
+        return (int(np.mean(intersections[:, 0])), int(np.mean(intersections[:, 1])))
+    
+    def distance_to_center(point, center):
+        return np.sqrt((point[0] - center[0])**2 + (point[1] - center[1])**2)
+    
+    center_x = np.mean(intersections[:, 0])
+    center_y = np.mean(intersections[:, 1])
+    
+    distances = [distance_to_center(p, (center_x, center_y)) for p in intersections]
+    threshold = np.percentile(distances, 75)
+    
+    filtered_points = [p for i, p in enumerate(intersections) if distances[i] <= threshold]
+    
+    if len(filtered_points) >= 4:
+        filtered_points = np.array(filtered_points)
+        center_x = np.mean(filtered_points[:, 0])
+        center_y = np.mean(filtered_points[:, 1])
+    
+    return (int(center_x), int(center_y))
 
 
 def template_match(img_orig, img_template, method):
