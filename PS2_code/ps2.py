@@ -1,106 +1,90 @@
 import cv2
 import numpy as np
-from matplotlib import pyplot as plt
+# import matplotlib.pyplot as plt
 
 
-def traffic_light_detection(img_in, radii_range):
-    """Finds the coordinates of a traffic light image given a radii
-    range.
-    Use the radii range to find the circles in the traffic light and
-    identify which of them represents the yellow light.
-    Analyze the states of all three lights and determine whether the
-    traffic light is red, yellow, or green. This will be referred to
-    as the 'state'.
-    It is recommended you use Hough tools to find these circles in
-    the image.
-    The input image may be just the traffic light with a white
-    background or a larger image of a scene containing a traffic
-    light.
-    Args:
-        img_in (numpy.array): image containing a traffic light.
-        radii_range (list): range of radii values to search for.
-    Returns:
-        tuple: 2-element tuple containing:
-        coordinates (tuple): traffic light center using the (x, y)
-                             convention.
-        state (str): traffic light state. A value in {'red', 'yellow',
-                     'green'}
-    """
-    gray = cv2.cvtColor(img_in, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+def traffic_light_detection(img, radius_range):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
     
-    circles = cv2.HoughCircles(
-        blurred,
-        cv2.HOUGH_GRADIENT,
-        dp=1,
-        minDist=20,
-        param1=30,
-        param2=20,
-        minRadius=min(radii_range),
-        maxRadius=max(radii_range)
-    )
+    circles = cv2.HoughCircles(blur, cv2.HOUGH_GRADIENT, dp=1, minDist=20, param1=30, param2=20, minRadius=min(radius_range), maxRadius=max(radius_range))
     
-    if circles is None:
+    if circles is None:  # no circles found
         return (0, 0), 'red'
     
     circles = np.round(circles[0, :]).astype("int")
     circles = sorted(circles, key=lambda x: x[1])
     
-    if len(circles) < 3:
-        center_x, center_y, _ = circles[0]
-        return (center_x, center_y), 'red'
+    if len(circles) < 3:  # not enough circles
+        return (circles[0][0], circles[0][1]), 'red'
     
-    top_circle = circles[0]
-    middle_circle = circles[1] 
-    bottom_circle = circles[2]
-    center_x, center_y, _ = middle_circle
+    top = circles[0]
+    middle = circles[1] 
+    bottom = circles[2]
     
-    hsv = cv2.cvtColor(img_in, cv2.COLOR_BGR2HSV)
+    # get precise center using moments from circular mask
+    x, y, r = middle
+    mask = np.zeros(gray.shape, dtype=np.uint8)
+    cv2.circle(mask, (x, y), r, 255, -1)
+    M = cv2.moments(mask)
+    if M['m00'] != 0:
+        center_x = int(M['m10'] / M['m00'])
+        center_y = int(M['m01'] / M['m00'])
+    else:
+        center_x, center_y = x, y
     
-    red_lower1 = np.array([0, 50, 50])
-    red_upper1 = np.array([10, 255, 255])
-    red_lower2 = np.array([170, 50, 50])
-    red_upper2 = np.array([180, 255, 255])
-    yellow_lower = np.array([20, 50, 50])
-    yellow_upper = np.array([30, 255, 255])
-    green_lower = np.array([40, 50, 50])
-    green_upper = np.array([80, 255, 255])
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     
-    def check_circle_color(circle, hsv_img):
+    # red has two ranges because of hue wrap-around
+    red1_low = np.array([0, 50, 50])  # first red range
+    red1_high = np.array([10, 255, 255])
+    red2_low = np.array([170, 50, 50])  # second red range
+    red2_high = np.array([180, 255, 255])
+    
+    yellow_low = np.array([20, 50, 50])
+    yellow_high = np.array([30, 255, 255])
+    
+    green_low = np.array([40, 50, 50])
+    green_high = np.array([80, 255, 255])
+    
+    def get_color(circle, hsv_img):
         x, y, r = circle
         mask = np.zeros(hsv_img.shape[:2], dtype=np.uint8)
         cv2.circle(mask, (x, y), r, 255, -1)
-        circle_pixels = hsv_img[mask > 0]
+        pixels = hsv_img[mask > 0]
         
-        if len(circle_pixels) == 0:
+        if len(pixels) == 0:
             return 'off'
         
-        red_mask1 = cv2.inRange(circle_pixels.reshape(-1, 1, 3), red_lower1, red_upper1)
-        red_mask2 = cv2.inRange(circle_pixels.reshape(-1, 1, 3), red_lower2, red_upper2)
-        red_pixels = np.sum(red_mask1) + np.sum(red_mask2)
+        # check red (two ranges)
+        red1_mask = (pixels[...,0] >= red1_low[0]) & (pixels[...,0] <= red1_high[0]) & (pixels[...,1] >= red1_low[1]) & (pixels[...,1] <= red1_high[1]) & (pixels[...,2] >= red1_low[2]) & (pixels[...,2] <= red1_high[2])
+        red2_mask = (pixels[...,0] >= red2_low[0]) & (pixels[...,0] <= red2_high[0]) & (pixels[...,1] >= red2_low[1]) & (pixels[...,1] <= red2_high[1]) & (pixels[...,2] >= red2_low[2]) & (pixels[...,2] <= red2_high[2])
+        red_count = np.sum(red1_mask) + np.sum(red2_mask)
         
-        yellow_mask = cv2.inRange(circle_pixels.reshape(-1, 1, 3), yellow_lower, yellow_upper)
-        yellow_pixels = np.sum(yellow_mask)
+        # check yellow
+        yellow_mask = (pixels[...,0] >= yellow_low[0]) & (pixels[...,0] <= yellow_high[0]) & (pixels[...,1] >= yellow_low[1]) & (pixels[...,1] <= yellow_high[1]) & (pixels[...,2] >= yellow_low[2]) & (pixels[...,2] <= yellow_high[2])
+        yellow_count = np.sum(yellow_mask)
         
-        green_mask = cv2.inRange(circle_pixels.reshape(-1, 1, 3), green_lower, green_upper)
-        green_pixels = np.sum(green_mask)
+        # check green
+        green_mask = (pixels[...,0] >= green_low[0]) & (pixels[...,0] <= green_high[0]) & (pixels[...,1] >= green_low[1]) & (pixels[...,1] <= green_high[1]) & (pixels[...,2] >= green_low[2]) & (pixels[...,2] <= green_high[2])
+        green_count = np.sum(green_mask)
         
-        max_pixels = max(red_pixels, yellow_pixels, green_pixels)
+        max_count = max(red_count, yellow_count, green_count)
         
-        if max_pixels < 50:
+        if max_count < 50:
             return 'off'
-        elif red_pixels == max_pixels:
+        elif red_count == max_count:
             return 'red'
-        elif yellow_pixels == max_pixels:
+        elif yellow_count == max_count:
             return 'yellow'
-        elif green_pixels == max_pixels:
+        elif green_count == max_count:
             return 'green'
         else:
             return 'off'
     
-    top_color = check_circle_color(top_circle, hsv)
-    middle_color = check_circle_color(middle_circle, hsv)
-    bottom_color = check_circle_color(bottom_circle, hsv)
+    top_color = get_color(top, hsv)
+    middle_color = get_color(middle, hsv)
+    bottom_color = get_color(bottom, hsv)
     
     if top_color == 'red':
         state = 'red'
@@ -109,19 +93,20 @@ def traffic_light_detection(img_in, radii_range):
     elif bottom_color == 'green':
         state = 'green'
     else:
-        def get_brightness(circle, gray_img):
+        # fallback to brightness if color detection fails
+        def brightness(circle, gray_img):
             x, y, r = circle
             mask = np.zeros(gray_img.shape, dtype=np.uint8)
             cv2.circle(mask, (x, y), r, 255, -1)
             return np.mean(gray_img[mask > 0])
         
-        top_brightness = get_brightness(top_circle, gray)
-        middle_brightness = get_brightness(middle_circle, gray)
-        bottom_brightness = get_brightness(bottom_circle, gray)
+        top_bright = brightness(top, gray)
+        middle_bright = brightness(middle, gray)
+        bottom_bright = brightness(bottom, gray)
         
-        if top_brightness > middle_brightness and top_brightness > bottom_brightness:
+        if top_bright > middle_bright and top_bright > bottom_bright:
             state = 'red'
-        elif middle_brightness > top_brightness and middle_brightness > bottom_brightness:
+        elif middle_bright > top_bright and middle_bright > bottom_bright:
             state = 'yellow'
         else:
             state = 'green'
@@ -129,159 +114,76 @@ def traffic_light_detection(img_in, radii_range):
     return (center_x, center_y), state
 
 
-def construction_sign_detection(img_in):
-    """Finds the centroid coordinates of a construction sign in the
-    provided image.
-    Args:
-        img_in (numpy.array): image containing a traffic light.
-    Returns:
-        (x,y) tuple of the coordinates of the center of the sign.
-    """
-    gray = cv2.cvtColor(img_in, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+def construction_sign_detection(img):
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     
-    edges = cv2.Canny(blurred, 50, 150)
+    # orange range for construction signs
+    orange_min = np.array([10, 100, 100])
+    orange_max = np.array([25, 255, 255])
     
-    lines = cv2.HoughLinesP(
-        edges,
-        rho=1,
-        theta=np.pi/180,
-        threshold=50,
-        minLineLength=30,
-        maxLineGap=10
-    )
+    orange_mask = cv2.inRange(hsv, orange_min, orange_max)
     
-    if lines is None:
+    ys, xs = np.where(orange_mask > 0)
+    
+    if len(xs) == 0:
         return (0, 0)
     
-    hsv = cv2.cvtColor(img_in, cv2.COLOR_BGR2HSV)
+    # compute centroid
+    cx = int(np.mean(xs))
+    cy = int(np.mean(ys))
     
-    orange_lower = np.array([10, 100, 100])
-    orange_upper = np.array([25, 255, 255])
-    yellow_lower = np.array([20, 100, 100])
-    yellow_upper = np.array([30, 255, 255])
-    
-    orange_mask = cv2.inRange(hsv, orange_lower, orange_upper)
-    yellow_mask = cv2.inRange(hsv, yellow_lower, yellow_upper)
-    color_mask = cv2.bitwise_or(orange_mask, yellow_mask)
-    
-    intersections = []
-    
-    for i in range(len(lines)):
-        for j in range(i + 1, len(lines)):
-            x1, y1, x2, y2 = lines[i][0]
-            x3, y3, x4, y4 = lines[j][0]
-            
-            denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
-            if abs(denom) > 1e-6:
-                t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom
-                u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom
-                
-                if 0 <= t <= 1 and 0 <= u <= 1:
-                    px = int(x1 + t * (x2 - x1))
-                    py = int(y1 + t * (y2 - y1))
-                    
-                    if 0 <= px < img_in.shape[1] and 0 <= py < img_in.shape[0]:
-                        if color_mask[py, px] > 0:
-                            intersections.append((px, py))
-    
-    if not intersections:
-        return (0, 0)
-    
-    intersections = np.array(intersections)
-    
-    if len(intersections) < 4:
-        return (int(np.mean(intersections[:, 0])), int(np.mean(intersections[:, 1])))
-    
-    def distance_to_center(point, center):
-        return np.sqrt((point[0] - center[0])**2 + (point[1] - center[1])**2)
-    
-    center_x = np.mean(intersections[:, 0])
-    center_y = np.mean(intersections[:, 1])
-    
-    distances = [distance_to_center(p, (center_x, center_y)) for p in intersections]
-    threshold = np.percentile(distances, 75)
-    
-    filtered_points = [p for i, p in enumerate(intersections) if distances[i] <= threshold]
-    
-    if len(filtered_points) >= 4:
-        filtered_points = np.array(filtered_points)
-        center_x = np.mean(filtered_points[:, 0])
-        center_y = np.mean(filtered_points[:, 1])
-    
-    return (int(center_x), int(center_y))
+    return (cx, cy)
 
 
-def template_match(img_orig, img_template, method):
-    """Returns the location corresponding to match between original image and provided template.
-    Args:
-        img_orig (np.array) : numpy array representing 2-D image on which we need to find the template
-        img_template: numpy array representing template image which needs to be matched within the original image
-        method: corresponds to one of the four metrics used to measure similarity between template and image window
-    Returns:
-        Co-ordinates of the topmost and leftmost pixel in the result matrix with maximum match
-    """
-    """Each method is calls for a different metric to determine
-       the degree to which the template matches the original image
-       We are required to implement each technique using the
-       sliding window approach.
-       Suggestion : For loops in python are notoriously slow
-       Can we find a vectorized solution to make it faster?
-    """
-    # Convert to grayscale if needed
-    if len(img_orig.shape) == 3:
-        img_orig = cv2.cvtColor(img_orig, cv2.COLOR_BGR2GRAY)
-    if len(img_template.shape) == 3:
-        img_template = cv2.cvtColor(img_template, cv2.COLOR_BGR2GRAY)
+def template_match(img, template, method):
+    # convert to grayscale
+    if len(img.shape) == 3:
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    if len(template.shape) == 3:
+        template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
     
-    # Convert to float64 for calculations
-    img_orig = img_orig.astype(np.float64)
-    img_template = img_template.astype(np.float64)
+    img = img.astype(np.float64)
+    template = template.astype(np.float64)
     
-    # Calculate result matrix dimensions
-    h_orig, w_orig = img_orig.shape
-    h_template, w_template = img_template.shape
-    result_h = h_orig - h_template + 1
-    result_w = w_orig - w_template + 1
+    h, w = img.shape
+    th, tw = template.shape
+    result_h = h - th + 1
+    result_w = w - tw + 1
     
     if method == "tm_ssd":
-        # Sum of Squared Differences - minimize for best match
         result = np.zeros((result_h, result_w), dtype=np.float64)
         for i in range(result_h):
             for j in range(result_w):
-                window = img_orig[i:i+h_template, j:j+w_template]
-                result[i, j] = np.sum((window - img_template) ** 2)
+                window = img[i:i+th, j:j+tw]
+                result[i, j] = np.sum((window - template) ** 2)
         top_left = np.unravel_index(np.argmin(result), result.shape)
     
     elif method == "tm_nssd":
-        # Normalized Sum of Squared Differences
         result = np.zeros((result_h, result_w), dtype=np.float64)
-        template_norm = np.sqrt(np.sum(img_template ** 2))
+        template_norm = np.sqrt(np.sum(template ** 2))
         for i in range(result_h):
             for j in range(result_w):
-                window = img_orig[i:i+h_template, j:j+w_template]
+                window = img[i:i+th, j:j+tw]
                 window_norm = np.sqrt(np.sum(window ** 2))
                 if window_norm > 0:
-                    result[i, j] = np.sum((window - img_template) ** 2) / (template_norm * window_norm)
+                    result[i, j] = np.sum((window - template) ** 2) / (template_norm * window_norm)
                 else:
                     result[i, j] = float('inf')
         top_left = np.unravel_index(np.argmin(result), result.shape)
     
     elif method == "tm_ccor":
-        # Cross Correlation - use filter2D for efficiency
-        result = cv2.filter2D(img_orig, -1, img_template)
+        result = cv2.filter2D(img, -1, template)
         top_left = np.unravel_index(np.argmax(result), result.shape)
     
     elif method == "tm_nccor":
-        # Normalized Cross Correlation with mean centering
-        template_mean = np.mean(img_template)
-        template_centered = img_template - template_mean
+        template_mean = np.mean(template)
+        template_centered = template - template_mean
         template_norm = np.sqrt(np.sum(template_centered ** 2))
         
         result = np.zeros((result_h, result_w), dtype=np.float64)
         for i in range(result_h):
             for j in range(result_w):
-                window = img_orig[i:i+h_template, j:j+w_template]
+                window = img[i:i+th, j:j+tw]
                 window_mean = np.mean(window)
                 window_centered = window - window_mean
                 window_norm = np.sqrt(np.sum(window_centered ** 2))
@@ -298,77 +200,44 @@ def template_match(img_orig, img_template, method):
     return (int(top_left[1]), int(top_left[0]))
 
 
-'''Below is the helper code to print images for the report'''
-#     cv2.rectangle(img_orig,top_left, bottom_right, 255, 2)
-#     plt.subplot(121),plt.imshow(result,cmap = 'gray')
-#     plt.title('Matching Result'), plt.xticks([]), plt.yticks([])
-#     plt.subplot(122),plt.imshow(img_orig,cmap = 'gray')
-#     plt.title('Detected Point'), plt.xticks([]), plt.yticks([])
-#     plt.suptitle(method)
-#     plt.show()
+# helper code for debugging template matching
+# cv2.rectangle(img, top_left, bottom_right, 255, 2)
+# plt.imshow(result, cmap='gray')
+# plt.show()
 
 
 def dft(x):
-    """Discrete Fourier Transform for 1D signal
-    Args:
-        x (np.array): 1-dimensional numpy array of shape (n,) representing signal
-    Returns:
-        y (np.array): 1-dimensional numpy array of shape (n,) representing Fourier Transformed Signal
-
-    """
     x = np.asarray(x, dtype=np.complex128)
     N = len(x)
     n = np.arange(N)
     k = n.reshape((N, 1))
     
-    # Create the DFT matrix: e^(-2πi*k*n/N)
     dft_matrix = np.exp(-2j * np.pi * k * n / N)
-    
-    # Apply DFT: X[k] = sum(x[n] * e^(-2πi*k*n/N))
     y = np.dot(dft_matrix, x)
     
     return y
 
 
 def idft(x):
-    """Inverse Discrete Fourier Transform for 1D signal
-    Args:
-        x (np.array): 1-dimensional numpy array of shape (n,) representing Fourier-Transformed signal
-    Returns:
-        y (np.array): 1-dimensional numpy array of shape (n,) representing signal
-
-    """
     x = np.asarray(x, dtype=np.complex128)
     N = len(x)
     n = np.arange(N)
     k = n.reshape((N, 1))
     
-    # Create the IDFT matrix: e^(2πi*k*n/N)
     idft_matrix = np.exp(2j * np.pi * k * n / N)
-    
-    # Apply IDFT: x[n] = (1/N) * sum(X[k] * e^(2πi*k*n/N))
     y = np.dot(idft_matrix, x) / N
     
     return y
 
 
 def dft2(img):
-    """Discrete Fourier Transform for 2D signal
-    Args:
-        img (np.array): 2-dimensional numpy array of shape (n,m) representing image
-    Returns:
-        y (np.array): 2-dimensional numpy array of shape (n,m) representing Fourier-Transformed image
-
-    """
     img = np.asarray(img, dtype=np.complex128)
     rows, cols = img.shape
     
-    # Apply 1D DFT to each row
     dft_rows = np.zeros_like(img, dtype=np.complex128)
     for i in range(rows):
         dft_rows[i, :] = dft(img[i, :])
     
-    # Apply 1D DFT to each column of the result
     dft_result = np.zeros_like(img, dtype=np.complex128)
     for j in range(cols):
         dft_result[:, j] = dft(dft_rows[:, j])
@@ -377,22 +246,13 @@ def dft2(img):
 
 
 def idft2(img):
-    """Inverse Discrete Fourier Transform for 2D signal
-    Args:
-        img (np.array): 2-dimensional numpy array of shape (n,m) representing Fourier-Transformed image
-    Returns:
-        y (np.array): 2-dimensional numpy array of shape (n,m) representing image
-
-    """
     img = np.asarray(img, dtype=np.complex128)
     rows, cols = img.shape
     
-    # Apply 1D IDFT to each column
     idft_cols = np.zeros_like(img, dtype=np.complex128)
     for j in range(cols):
         idft_cols[:, j] = idft(img[:, j])
     
-    # Apply 1D IDFT to each row of the result
     idft_result = np.zeros_like(img, dtype=np.complex128)
     for i in range(rows):
         idft_result[i, :] = idft(idft_cols[i, :])
@@ -401,93 +261,58 @@ def idft2(img):
 
 
 def compress_image_fft(img_bgr, threshold_percentage):
-    """Return compressed image by converting to fourier domain, thresholding based on threshold percentage, and converting back to fourier domain
-    Args:
-        img_bgr (np.array): numpy array of shape (n,m,3) representing bgr image
-        threshold_percentage (float): between 0 and 1 representing what percentage of Fourier image to keep
-    Returns:
-        img_compressed (np.array): numpy array of shape (n,m,3) representing compressed image. (Make sure the data type of the np array is float64)
-        compressed_frequency_img (np.array): numpy array of shape (n,m,3) representing the compressed image in the frequency domain
-
-    """
     img_bgr = img_bgr.astype(np.float64)
     h, w, c = img_bgr.shape
     
     img_compressed = np.zeros_like(img_bgr, dtype=np.float64)
     compressed_frequency_img = np.zeros_like(img_bgr, dtype=np.complex128)
     
-    # Process each color channel
     for channel in range(c):
-        # Convert channel to frequency domain
-        channel_freq = dft2(img_bgr[:, :, channel])
+        F = np.fft.fft2(img_bgr[:, :, channel])
         
-        # Get magnitude and flatten for sorting
-        magnitude = np.abs(channel_freq)
+        magnitude = np.abs(F)
         magnitude_flat = magnitude.flatten()
         
-        # Sort frequencies from greatest to least
         sorted_indices = np.argsort(magnitude_flat)[::-1]
         
-        # Find threshold index
-        threshold_index = int(np.floor(threshold_percentage * len(magnitude_flat)))
-        threshold_value = magnitude_flat[sorted_indices[threshold_index]]
+        keep_count = int(np.floor(threshold_percentage * len(magnitude_flat)))
+        top_indices = sorted_indices[:keep_count]
         
-        # Create mask for frequencies above threshold
-        mask = magnitude >= threshold_value
+        mask = np.zeros_like(magnitude_flat, dtype=bool)
+        mask[top_indices] = True
+        mask = mask.reshape(magnitude.shape)
         
-        # Apply mask to frequency domain
-        masked_freq = channel_freq * mask
+        masked_F = F * mask
         
-        # Convert back to spatial domain
-        channel_compressed = np.real(idft2(masked_freq))
+        channel_compressed = np.real(np.fft.ifft2(masked_F))
         
-        # Store results
         img_compressed[:, :, channel] = channel_compressed
-        compressed_frequency_img[:, :, channel] = masked_freq
+        compressed_frequency_img[:, :, channel] = masked_F
     
     return img_compressed, compressed_frequency_img
 
 
 def low_pass_filter(img_bgr, r):
-    """Return low pass filtered image by keeping a circle of radius r centered on the frequency domain image
-    Args:
-        img_bgr (np.array): numpy array of shape (n,m,3) representing bgr image
-        r (float): radius of low pass circle
-    Returns:
-        img_low_pass (np.array): numpy array of shape (n,m,3) representing low pass filtered image. (Make sure the data type of the np array is float64)
-        low_pass_frequency_img (np.array): numpy array of shape (n,m,3) representing the low pass filtered image in the frequency domain
-
-    """
     img_bgr = img_bgr.astype(np.float64)
     h, w, c = img_bgr.shape
     
     img_low_pass = np.zeros_like(img_bgr, dtype=np.float64)
     low_pass_frequency_img = np.zeros_like(img_bgr, dtype=np.complex128)
     
-    # Create circular mask
     center_y, center_x = h // 2, w // 2
     y, x = np.ogrid[:h, :w]
     mask = (x - center_x) ** 2 + (y - center_y) ** 2 <= r ** 2
     
-    # Process each color channel
     for channel in range(c):
-        # Convert channel to frequency domain
-        channel_freq = dft2(img_bgr[:, :, channel])
+        F = np.fft.fft2(img_bgr[:, :, channel])
+        F_shift = np.fft.fftshift(F)
         
-        # Shift frequencies so low frequencies are at center
-        channel_freq_shifted = np.fft.fftshift(channel_freq)
+        masked_F_shift = F_shift * mask
+        masked_F = np.fft.ifftshift(masked_F_shift)
         
-        # Apply circular mask
-        masked_freq_shifted = channel_freq_shifted * mask
+        channel_filtered = np.real(np.fft.ifft2(masked_F))
         
-        # Undo the shift
-        masked_freq = np.fft.ifftshift(masked_freq_shifted)
-        
-        # Convert back to spatial domain
-        channel_filtered = np.real(idft2(masked_freq))
-        
-        # Store results
         img_low_pass[:, :, channel] = channel_filtered
-        low_pass_frequency_img[:, :, channel] = masked_freq
+        low_pass_frequency_img[:, :, channel] = masked_F_shift
     
     return img_low_pass, low_pass_frequency_img

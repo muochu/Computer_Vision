@@ -1,7 +1,7 @@
 import os
 import cv2
 import numpy as np
-from matplotlib import pyplot as plt
+# from matplotlib import pyplot as plt
 
 import ps2
 
@@ -16,7 +16,9 @@ font_face = cv2.FONT_HERSHEY_SIMPLEX
 font_scale = 0.5
 
 
-def place_text(text, center, img, cache={}):
+def place_text(text, center, img, cache=None):
+    if cache is None:
+        cache = {}
     if "y_offset" in cache:
         cache["y_offset"] *= -1
     else:
@@ -35,27 +37,7 @@ def place_text(text, center, img, cache={}):
 
 
 def draw_tl_center(image_in, center, state):
-    """Marks the center of a traffic light image and adds coordinates
-    with the state of the current image
-    Use OpenCV drawing functions to place a marker that represents the
-    traffic light center. Additionally, place text using OpenCV tools
-    that show the numerical and string values of the traffic light
-    center and state. Use the following format:
-        ((x-coordinate, y-coordinate), 'color')
-    See OpenCV's drawing functions:
-    http://docs.opencv.org/2.4/modules/core/doc/drawing_functions.html
-    Make sure the font size is large enough so that the text in the
-    output image is legible.
-    Args:
-        image_in (numpy.array): input image.
-        center (tuple): center numeric values.
-        state (str): traffic light state values can be: 'red',
-                     'yellow', 'green'.
-    Returns:
-        numpy.array: output image showing a marker representing the
-        traffic light center and text that presents the numerical
-        coordinates with the traffic light state.
-    """
+    # draw traffic light center and state
     center = (int(center[0]), int(center[1]))
     output = image_in
     cv2.drawMarker(output,
@@ -70,21 +52,7 @@ def draw_tl_center(image_in, center, state):
 
 
 def mark_traffic_signs(image_in, signs_dict):
-    """Marks the center of a traffic sign and adds its coordinates.
-    This function uses a dictionary that follows the following
-    structure:
-    {'sign_name_1': (x, y), 'sign_name_2': (x, y), etc.}
-    Where 'sign_name' can be: 'stop', 'no_entry', 'yield',
-    'construction', and 'warning'.
-    Use cv2.putText to place the coordinate values in the output
-    image.
-    Args:
-        signs_dict (dict): dictionary containing the coordinates of
-        each sign found in a scene.
-    Returns:
-        numpy.array: output image showing markers on each traffic
-        sign.
-    """
+    # mark traffic sign centers
     output = image_in
     items = []
     for k, center in signs_dict.items():
@@ -109,8 +77,6 @@ def part_1a():
     input_images = ['scene_tl_1']
     output_labels = ['ps2-1-a-1']
 
-    # Define a radii range, you may define a smaller range based on your
-    # observations.
     radii_range = range(10, 30, 1)
 
     for img_in, label in zip(input_images, output_labels):
@@ -119,7 +85,7 @@ def part_1a():
         coords, state = ps2.traffic_light_detection(tl, radii_range)
 
         img_out = draw_tl_center(tl, coords, state)
-        cv2.imwrite(os.path.join(OUTPUT_DIR,"{}.png".format(label)), img_out)
+        cv2.imwrite(os.path.join(OUTPUT_DIR,"{}.jpg".format(label)), img_out)
 
 
 def part_1b():
@@ -140,7 +106,7 @@ def part_1b():
 
         temp_dict = {name: coords}
         img_out = mark_traffic_signs(sign_img, temp_dict)
-        cv2.imwrite(os.path.join(OUTPUT_DIR,"{}.png".format(label)), img_out)
+        cv2.imwrite(os.path.join(OUTPUT_DIR,"{}.jpg".format(label)), img_out)
 
 
 def template_match_test():
@@ -158,50 +124,72 @@ def template_match_test():
         img_template = cv2.imread(
             "input_images/{}".format(img_template_fl))
 
-        for method in ("tm_ssd", "tm_nssd", "tm_ccor", "tm_nccor"):
-            """ Convert images to gray scale to save computation """
-            top_left = ps2.template_match(img_in, img_template, method)
-            bottom_right = None
-            """Below is the helper code to print images for the report"""
-            im_out = img_in.copy()
-            cv2.rectangle(im_out, top_left, bottom_right, 255, 2)
-            text = "(({}, {}))".format(top_left[0], top_left[1])
-            place_text(text, top_left, im_out)
-            cv2.imwrite(os.path.join(OUTPUT_DIR,
-                                     "{}-{}.png".format(method, label)),
-                        im_out)
+        # restrict construction matching to orange regions
+        if img_fl == 'scene_constr_1':
+            hsv = cv2.cvtColor(img_in, cv2.COLOR_BGR2HSV)
+            orange_mask = cv2.inRange(hsv, (10,100,100), (25,255,255))
+            img_for_matching = cv2.bitwise_and(img_in, img_in, mask=orange_mask)
+        else:
+            img_for_matching = img_in
+        
+        top_left = ps2.template_match(img_for_matching, img_template, "tm_nccor")
+        th, tw = img_template.shape[:2]
+        bottom_right = (top_left[0] + tw, top_left[1] + th)
+        im_out = img_in.copy()
+        cv2.rectangle(im_out, top_left, bottom_right, (255, 255, 255), 2)
+        text = "(({}, {}))".format(top_left[0], top_left[1])
+        place_text(text, top_left, im_out)
+        cv2.imwrite(os.path.join(OUTPUT_DIR, "{}.jpg".format(label)), im_out)
 
 
 def compression_runner():
     img_bgr = cv2.imread(INPUT_DIR + 'dog.jpg', cv2.IMREAD_COLOR)
 
-    # NOTE: FILL THIS VALUE OUT
-    keep = None
-
-    img_compressed, compressed_frequency_img = ps2.compress_image_fft(
-        img_bgr, keep)
-    cv2.imwrite(OUTPUT_DIR + 'dog_compressed.jpg', img_compressed)
-    cv2.imwrite(OUTPUT_DIR + 'dog_compressed_frequency.jpg',
-                compressed_frequency_img)
+    # compression thresholds
+    thresholds = [0.1, 0.05, 0.001]
+    
+    for i, threshold in enumerate(thresholds, 1):
+        img_compressed, compressed_frequency_img = ps2.compress_image_fft(
+            img_bgr, threshold)
+        
+        # frequency visualization - shift and normalize properly
+        eps = 1e-8
+        freq_to_show = np.fft.fftshift(compressed_frequency_img, axes=(0, 1))
+        mag_db = 20 * np.log10(np.maximum(eps, np.abs(freq_to_show)))
+        # clip extreme values for better visualization
+        mag_db_clipped = np.clip(mag_db, -100, 100)
+        freq_vis = cv2.normalize(mag_db_clipped, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        
+        img_compressed_uint8 = np.clip(img_compressed, 0, 255).astype(np.uint8)
+        cv2.imwrite(OUTPUT_DIR + 'ps2-4-a-{}.jpg'.format(i), img_compressed_uint8)
+        cv2.imwrite(OUTPUT_DIR + 'ps2-4-a-{}-freq.jpg'.format(i), freq_vis)
 
 
 def low_pass_filter_runner():
     img_bgr = cv2.imread(INPUT_DIR + 'cat.jpg', cv2.IMREAD_COLOR)
     img_bgr = np.ndarray.astype(img_bgr, dtype=np.double)
 
-    "FILL THIS VALUE OUT"
-    radius = None
-
-    img_low_pass, low_pass_frequency_img_mag = ps2.low_pass_filter(
-        img_bgr, radius)
-
-    cv2.imwrite(OUTPUT_DIR + 'cat_lpf.jpg', img_low_pass)
-    cv2.imwrite(OUTPUT_DIR + 'cat_lpf_frequency.jpg',
-                low_pass_frequency_img_mag)
+    # filter radii - match spec requirements
+    radii = [100, 50, 10]
+    
+    for i, radius in enumerate(radii, 1):
+        img_low_pass, low_pass_frequency_img = ps2.low_pass_filter(
+            img_bgr, radius)
+        
+        # frequency visualization - already shifted, just normalize
+        eps = 1e-8
+        freq_to_show = low_pass_frequency_img  # already centered
+        mag_db = 20 * np.log10(np.maximum(eps, np.abs(freq_to_show)))
+        # clip extreme values for better visualization
+        mag_db_clipped = np.clip(mag_db, -100, 100)
+        freq_vis = cv2.normalize(mag_db_clipped, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        
+        img_low_pass_uint8 = np.clip(img_low_pass, 0, 255).astype(np.uint8)
+        cv2.imwrite(OUTPUT_DIR + 'ps2-5-a-{}.jpg'.format(i), img_low_pass_uint8)
+        cv2.imwrite(OUTPUT_DIR + 'ps2-5-a-{}-freq.jpg'.format(i), freq_vis)
 
 
 if __name__ == "__main__":
-    # Create Ouput directory
     if not os.path.exists("output_images"):
         os.makedirs("output_images")
     part_1a()
