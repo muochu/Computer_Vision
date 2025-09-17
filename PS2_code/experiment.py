@@ -8,7 +8,7 @@ import ps2
 INPUT_DIR = "input_images/"
 OUTPUT_DIR = "output_images/"
 
-# -- display utils
+# display utils
 marker_color = (255, 0, 255)
 text_color = (90, 90, 90)
 text_thickness = 2
@@ -152,7 +152,7 @@ def compression_runner():
         img_compressed, compressed_frequency_img = ps2.compress_image_fft(
             img_bgr, threshold)
         
-        # frequency visualization - shift and normalize properly
+        # frequency visualization, shift and normalize properly
         eps = 1e-8
         freq_to_show = np.fft.fftshift(compressed_frequency_img, axes=(0, 1))
         mag_db = 20 * np.log10(np.maximum(eps, np.abs(freq_to_show)))
@@ -169,16 +169,16 @@ def low_pass_filter_runner():
     img_bgr = cv2.imread(INPUT_DIR + 'cat.jpg', cv2.IMREAD_COLOR)
     img_bgr = np.ndarray.astype(img_bgr, dtype=np.double)
 
-    # filter radii - match spec requirements
+    # filter radii,  match spec requirements
     radii = [100, 50, 10]
     
     for i, radius in enumerate(radii, 1):
         img_low_pass, low_pass_frequency_img = ps2.low_pass_filter(
             img_bgr, radius)
         
-        # frequency visualization - already shifted, just normalize
+        # frequency visualization 
         eps = 1e-8
-        freq_to_show = low_pass_frequency_img  # already centered
+        freq_to_show = low_pass_frequency_img  
         mag_db = 20 * np.log10(np.maximum(eps, np.abs(freq_to_show)))
         # clip extreme values for better visualization
         mag_db_clipped = np.clip(mag_db, -100, 100)
