@@ -198,9 +198,175 @@ def find_markers(image, template=None):
         list: List of four (x, y) tuples
             in the order [top-left, bottom-left, top-right, bottom-right]
     """
+    
+    # Start with template matching approach since we have template
+    if template is None:
+        # Fallback to circle detection if no template
+        return _find_markers_circles(image)
+    
+    # Convert to grayscale for template matching
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
+    template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY) if len(template.shape) == 3 else template
+    
+    # Apply slight blur to handle noise
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    template_gray = cv2.GaussianBlur(template_gray, (3, 3), 0)
+    
+    # Template matching with multiple scales and methods
+    markers = []
+    # For small templates, try larger scale ranges
+    if template_gray.shape[0] < 50:  # Small template
+        scales = [0.5, 0.7, 0.9, 1.1, 1.3, 1.5, 1.7, 2.0, 2.5, 3.0]
+    else:  # Large template
+        scales = [0.6, 0.8, 1.0, 1.2, 1.4, 1.6]
+    methods = [cv2.TM_CCOEFF_NORMED, cv2.TM_CCORR_NORMED]  # Try different methods
+    
+    for method in methods:
+        for scale in scales:
+            if scale != 1.0:
+                h, w = template_gray.shape
+                new_h, new_w = int(h * scale), int(w * scale)
+                if new_h > 0 and new_w > 0:
+                    scaled_template = cv2.resize(template_gray, (new_w, new_h))
+                else:
+                    continue
+            else:
+                scaled_template = template_gray
+            
+            # Skip if template is larger than image
+            if scaled_template.shape[0] > gray.shape[0] or scaled_template.shape[1] > gray.shape[1]:
+                continue
+                
+            # Perform template matching
+            result = cv2.matchTemplate(gray, scaled_template, method)
+            
+            # Find peaks in the result - adjust threshold based on method
+            if method == cv2.TM_CCOEFF_NORMED:
+                threshold = 0.5
+            else:  # TM_CCORR_NORMED
+                threshold = 0.7
+                
+            # Simple thresholding with distance filtering
+            locations = np.where(result >= threshold)
+            
+            # Sort by confidence and take only the best matches
+            if len(locations[0]) > 0:
+                confidences = result[locations]
+                sorted_indices = np.argsort(confidences)[::-1]  # Sort descending
+                
+                # Take only the best matches, but filter by distance
+                for idx in sorted_indices[:20]:  # Take top 20 matches
+                    pt = (locations[1][idx], locations[0][idx])
+                    # Calculate center of marker - use integer coordinates
+                    center_x = int(pt[0] + scaled_template.shape[1] // 2)
+                    center_y = int(pt[1] + scaled_template.shape[0] // 2)
+                    markers.append((center_x, center_y))
+        
+        # If we found markers with this method, don't try the next method
+        if len(markers) > 0:
+            break
+    
+    # Remove duplicates and filter by distance
+    markers = _remove_duplicate_markers(markers)
+    
+    # If we don't have exactly 4 markers, try circle detection as backup
+    if len(markers) != 4:
+        circle_markers = _find_markers_circles(image)
+        if len(circle_markers) == 4:
+            markers = circle_markers
+    
+    # Sort markers into the required order: [top-left, bottom-left, top-right, bottom-right]
+    if len(markers) >= 4:
+        markers = _sort_markers(markers)
+        return markers[:4]  # Return only the first 4
+    
+    return markers
 
-    raise NotImplementedError
-    return out_list
+def _find_markers_circles(image):
+    """Fallback method using circle detection"""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
+    
+    # Apply Gaussian blur to reduce noise
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    
+    # Try different parameters for circle detection
+    markers = []
+    
+    # First attempt with standard parameters
+    circles = cv2.HoughCircles(blurred, cv2.HOUGH_GRADIENT, 1, 20,
+                              param1=50, param2=30, minRadius=10, maxRadius=100)
+    
+    if circles is not None:
+        circles = np.round(circles[0, :]).astype("int")
+        for (x, y, r) in circles:
+            markers.append((int(x), int(y)))
+    
+    # If we don't have enough markers, try more sensitive parameters
+    if len(markers) < 4:
+        circles = cv2.HoughCircles(blurred, cv2.HOUGH_GRADIENT, 1, 15,
+                                  param1=30, param2=20, minRadius=5, maxRadius=150)
+        if circles is not None:
+            circles = np.round(circles[0, :]).astype("int")
+            for (x, y, r) in circles:
+                markers.append((int(x), int(y)))
+    
+    # Remove duplicates
+    markers = _remove_duplicate_markers(markers)
+    
+    return markers
+
+def _remove_duplicate_markers(markers, min_distance=30):
+    """Remove markers that are too close to each other"""
+    if len(markers) <= 1:
+        return markers
+    
+    # Sort by x coordinate first
+    markers = sorted(markers, key=lambda x: x[0])
+    filtered = [markers[0]]
+    
+    for marker in markers[1:]:
+        is_duplicate = False
+        for existing in filtered:
+            dist = np.sqrt((marker[0] - existing[0])**2 + (marker[1] - existing[1])**2)
+            if dist < min_distance:
+                is_duplicate = True
+                break
+        
+        if not is_duplicate:
+            filtered.append(marker)
+    
+    return filtered
+
+def _sort_markers(markers):
+    """Sort markers into [top-left, bottom-left, top-right, bottom-right] order"""
+    if len(markers) < 4:
+        return markers
+    
+    # Convert to numpy array for easier manipulation
+    markers = np.array(markers)
+    
+    # Find center point
+    center = np.mean(markers, axis=0)
+    
+    # Split into left and right based on x coordinate relative to center
+    left_markers = markers[markers[:, 0] < center[0]]
+    right_markers = markers[markers[:, 0] >= center[0]]
+    
+    # Sort left markers by y coordinate (top to bottom)
+    left_sorted = left_markers[left_markers[:, 1].argsort()]
+    # Sort right markers by y coordinate (top to bottom)  
+    right_sorted = right_markers[right_markers[:, 1].argsort()]
+    
+    # Combine in required order: [top-left, bottom-left, top-right, bottom-right]
+    result = []
+    if len(left_sorted) >= 2:
+        result.extend([(int(left_sorted[0][0]), int(left_sorted[0][1])), 
+                      (int(left_sorted[1][0]), int(left_sorted[1][1]))])
+    if len(right_sorted) >= 2:
+        result.extend([(int(right_sorted[0][0]), int(right_sorted[0][1])), 
+                      (int(right_sorted[1][0]), int(right_sorted[1][1]))])
+    
+    return result
 
 
 def draw_box(image, markers, thickness=1):
