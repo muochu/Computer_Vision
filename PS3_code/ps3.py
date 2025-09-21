@@ -199,6 +199,15 @@ def find_markers(image, template=None):
             in the order [top-left, bottom-left, top-right, bottom-right]
     """
     
+    # Try circle detection first for larger images (wall images)
+    if template is not None and len(image.shape) == 3:
+        h, w = image.shape[:2]
+        if h > 500 and w > 1000:  # Large image, try circle detection first
+            circle_markers = _find_markers_circles(image)
+            if len(circle_markers) >= 4:
+                markers = _sort_markers(circle_markers)
+                return markers[:4]
+    
     # Start with template matching approach since we have template
     if template is None:
         # Fallback to circle detection if no template
@@ -242,20 +251,31 @@ def find_markers(image, template=None):
             
             # Find peaks in the result - adjust threshold based on method
             if method == cv2.TM_CCOEFF_NORMED:
-                threshold = 0.5
+                threshold = 0.4
             else:  # TM_CCORR_NORMED
                 threshold = 0.7
                 
-            # Simple thresholding with distance filtering
-            locations = np.where(result >= threshold)
+            # Find local maxima to avoid clustered matches
+            h, w = result.shape
+            local_maxima = np.zeros_like(result)
+            for i in range(1, h-1):
+                for j in range(1, w-1):
+                    if (result[i, j] > result[i-1, j] and 
+                        result[i, j] > result[i+1, j] and
+                        result[i, j] > result[i, j-1] and
+                        result[i, j] > result[i, j+1] and
+                        result[i, j] >= threshold):
+                        local_maxima[i, j] = result[i, j]
+            
+            locations = np.where(local_maxima > 0)
             
             # Sort by confidence and take only the best matches
             if len(locations[0]) > 0:
-                confidences = result[locations]
+                confidences = local_maxima[locations]
                 sorted_indices = np.argsort(confidences)[::-1]  # Sort descending
                 
-                # Take only the best matches, but filter by distance
-                for idx in sorted_indices[:20]:  # Take top 20 matches
+                # Take only the best matches
+                for idx in sorted_indices[:10]:  # Take top 10 matches
                     pt = (locations[1][idx], locations[0][idx])
                     # Calculate center of marker - use integer coordinates
                     center_x = int(pt[0] + scaled_template.shape[1] // 2)
@@ -272,7 +292,7 @@ def find_markers(image, template=None):
     # If we don't have exactly 4 markers, try circle detection as backup
     if len(markers) != 4:
         circle_markers = _find_markers_circles(image)
-        if len(circle_markers) == 4:
+        if len(circle_markers) >= 4:
             markers = circle_markers
     
     # Sort markers into the required order: [top-left, bottom-left, top-right, bottom-right]
@@ -289,29 +309,108 @@ def _find_markers_circles(image):
     # Apply Gaussian blur to reduce noise
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     
-    # Try different parameters for circle detection
+    # Use more restrictive parameters to avoid false positives
     markers = []
     
-    # First attempt with standard parameters
-    circles = cv2.HoughCircles(blurred, cv2.HOUGH_GRADIENT, 1, 20,
-                              param1=50, param2=30, minRadius=10, maxRadius=100)
+    # Try with very precise parameters
+    circles = cv2.HoughCircles(blurred, cv2.HOUGH_GRADIENT, 1, 30,
+                              param1=90, param2=50, minRadius=10, maxRadius=60)
     
     if circles is not None:
         circles = np.round(circles[0, :]).astype("int")
         for (x, y, r) in circles:
             markers.append((int(x), int(y)))
     
-    # If we don't have enough markers, try more sensitive parameters
+    # If we don't have enough markers, try slightly more sensitive parameters
     if len(markers) < 4:
-        circles = cv2.HoughCircles(blurred, cv2.HOUGH_GRADIENT, 1, 15,
-                                  param1=30, param2=20, minRadius=5, maxRadius=150)
+        circles = cv2.HoughCircles(blurred, cv2.HOUGH_GRADIENT, 1, 25,
+                                  param1=60, param2=35, minRadius=8, maxRadius=100)
         if circles is not None:
             circles = np.round(circles[0, :]).astype("int")
             for (x, y, r) in circles:
                 markers.append((int(x), int(y)))
     
-    # Remove duplicates
-    markers = _remove_duplicate_markers(markers)
+    # Remove duplicates and filter out edge circles
+    markers = _remove_duplicate_markers(markers, min_distance=50)
+    markers = _filter_edge_circles(markers, image.shape[:2])
+    
+    return markers
+
+def _filter_edge_circles(markers, image_shape):
+    """Filter out circles that are too close to image edges"""
+    h, w = image_shape
+    filtered = []
+    
+    for marker in markers:
+        x, y = marker
+        # Keep circles that are at least 20 pixels from edges
+        if (x > 20 and x < w - 20 and y > 20 and y < h - 20):
+            filtered.append(marker)
+    
+    return filtered
+
+def _find_markers_hybrid(image, template):
+    """Hybrid approach: use template matching to find regions, then circle detection to refine"""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
+    template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY) if len(template.shape) == 3 else template
+    
+    # Apply slight blur
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    template_gray = cv2.GaussianBlur(template_gray, (3, 3), 0)
+    
+    # Use template matching to find approximate regions
+    scales = [1.0, 2.0, 3.0, 4.0, 5.0]
+    candidate_regions = []
+    
+    for scale in scales:
+        if scale != 1.0:
+            h, w = template_gray.shape
+            new_h, new_w = int(h * scale), int(w * scale)
+            if new_h > 0 and new_w > 0:
+                scaled_template = cv2.resize(template_gray, (new_w, new_h))
+            else:
+                continue
+        else:
+            scaled_template = template_gray
+        
+        if scaled_template.shape[0] > gray.shape[0] or scaled_template.shape[1] > gray.shape[1]:
+            continue
+            
+        result = cv2.matchTemplate(gray, scaled_template, cv2.TM_CCOEFF_NORMED)
+        
+        # Find local maxima
+        h, w = result.shape
+        for i in range(1, h-1):
+            for j in range(1, w-1):
+                if (result[i, j] > result[i-1, j] and 
+                    result[i, j] > result[i+1, j] and
+                    result[i, j] > result[i, j-1] and
+                    result[i, j] > result[i, j+1] and
+                    result[i, j] >= 0.4):
+                    # Found a candidate region
+                    center_x = j + scaled_template.shape[1] // 2
+                    center_y = i + scaled_template.shape[0] // 2
+                    candidate_regions.append((center_x, center_y, scaled_template.shape[0]))
+    
+    # Now use circle detection to find exact centers near candidate regions
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    circles = cv2.HoughCircles(blurred, cv2.HOUGH_GRADIENT, 1, 15,
+                              param1=30, param2=20, minRadius=5, maxRadius=150)
+    
+    markers = []
+    if circles is not None:
+        circles = np.round(circles[0, :]).astype("int")
+        for (x, y, r) in circles:
+            # Check if this circle is near any candidate region
+            for cx, cy, size in candidate_regions:
+                dist = np.sqrt((x - cx)**2 + (y - cy)**2)
+                if dist < size:  # Circle is within the template region
+                    markers.append((int(x), int(y)))
+                    break  # Found a match, don't check other regions
+    
+    # If we don't have enough markers, just use circle detection
+    if len(markers) < 4:
+        return _find_markers_circles(image)
     
     return markers
 
