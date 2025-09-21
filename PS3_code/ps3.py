@@ -635,8 +635,12 @@ def video_frame_generator(filename):
     # Open file with VideoCapture and set result to 'video'. (add 1 line)
     video = cv2.VideoCapture(filename)
 
-    # TODO
-    raise NotImplementedError
+    # Read frames one by one until there are no more frames
+    while True:
+        ret, frame = video.read()
+        if not ret:
+            break
+        yield frame
 
     # Close video (release) and yield a 'None' value. (add 2 lines)
     video.release()
