@@ -164,7 +164,7 @@ def euclidean_distance(p0, p1):
     Return:
         float: The distance between points
     """
-    
+
     # Convert to numpy arrays if needed
     p0 = np.array(p0)
     p1 = np.array(p1)
@@ -210,7 +210,7 @@ def find_markers(image, template=None):
         list: List of four (x, y) tuples
             in the order [top-left, bottom-left, top-right, bottom-right]
     """
-    
+
     # Try circle detection first for larger images (wall images)
     if template is not None and len(image.shape) == 3:
         h, w = image.shape[:2]
@@ -493,7 +493,7 @@ def draw_box(image, markers, thickness=1):
     Returns:
         numpy.array: image with lines drawn.
     """
-    
+
     # Create a copy of the input image to avoid modifying the original
     out_image = image.copy()
     
@@ -538,7 +538,7 @@ def project_imageA_onto_imageB(imageA, imageB, homography):
     """
 
     out_image = imageB.copy()
-    
+
     # Get dimensions of both images
     hB, wB = imageB.shape[:2]
     hA, wA = imageA.shape[:2]
@@ -596,7 +596,7 @@ def find_four_point_transform(srcPoints, dstPoints):
     Returns:
         numpy.array: 3 by 3 homography matrix of floating point values
     """
-    
+
     # Convert to numpy arrays
     src = np.array(srcPoints, dtype=np.float64)
     dst = np.array(dstPoints, dtype=np.float64)
@@ -838,6 +838,157 @@ class Automatic_Corner_Detection(object):
 
         return x, y
 
+    def match_features(self, corners1, corners2, max_distance=50):
+        """Match Harris corners between two images using distance threshold.
+        
+        Args:
+            corners1: Array of (x, y) coordinates from image 1
+            corners2: Array of (x, y) coordinates from image 2  
+            max_distance: Maximum distance for a valid match
+            
+        Returns:
+            matches: List of (idx1, idx2) pairs of matched corner indices
+        """
+        matches = []
+        
+        for i, corner1 in enumerate(corners1):
+            best_match = None
+            best_distance = float('inf')
+            
+            for j, corner2 in enumerate(corners2):
+                distance = euclidean_distance(corner1, corner2)
+                if distance < best_distance and distance < max_distance:
+                    best_distance = distance
+                    best_match = j
+            
+            if best_match is not None:
+                matches.append((i, best_match))
+        
+        return matches
+
+    def ransac_homography(self, matches, corners1, corners2, p=0.99, s=4, e=0.5):
+        """RANSAC algorithm to find robust homography from corner matches.
+        
+        Args:
+            matches: List of (idx1, idx2) matched corner pairs
+            corners1: Array of corner coordinates from image 1
+            corners2: Array of corner coordinates from image 2
+            p: Probability of success (0.99)
+            s: Number of points needed for model (4)
+            e: Expected outlier ratio (0.5)
+            
+        Returns:
+            best_homography: 3x3 homography matrix
+            inliers: List of inlier match indices
+        """
+        if len(matches) < s:
+            return None, []
+        
+        # Calculate number of iterations needed
+        N = int(np.log(1 - p) / np.log(1 - (1 - e) ** s))
+        N = max(N, 100)  # Minimum iterations
+        
+        best_homography = None
+        best_inliers = []
+        max_inliers = 0
+        threshold = 5.0  # Pixel threshold for inlier
+        
+        for iteration in range(N):
+            # Randomly sample s matches
+            sample_indices = np.random.choice(len(matches), s, replace=False)
+            sample_matches = [matches[i] for i in sample_indices]
+            
+            # Extract corresponding points
+            src_points = [corners1[match[0]] for match in sample_matches]
+            dst_points = [corners2[match[1]] for match in sample_matches]
+            
+            try:
+                # Compute homography from sample
+                H = find_four_point_transform(src_points, dst_points)
+                
+                # Count inliers
+                inliers = []
+                for i, (idx1, idx2) in enumerate(matches):
+                    point1 = corners1[idx1]
+                    point2 = corners2[idx2]
+                    
+                    # Transform point1 using homography
+                    point1_homogeneous = np.array([point1[0], point1[1], 1])
+                    transformed = H @ point1_homogeneous
+                    transformed = transformed / transformed[2]  # Normalize
+                    
+                    # Calculate reprojection error
+                    error = euclidean_distance(transformed[:2], point2)
+                    
+                    if error < threshold:
+                        inliers.append(i)
+                
+                # Update best model if this one has more inliers
+                if len(inliers) > max_inliers:
+                    max_inliers = len(inliers)
+                    best_homography = H
+                    best_inliers = inliers
+                    
+            except:
+                # Skip this iteration if homography computation fails
+                continue
+        
+        return best_homography, best_inliers
+
+    def ransac_stitch(self, img1, img2, k=100):
+        """Complete RANSAC-based image stitching pipeline.
+        
+        Args:
+            img1: First image (numpy array)
+            img2: Second image (numpy array) 
+            k: Number of Harris corners to detect
+            
+        Returns:
+            mosaic: Stitched image
+            homography: Computed homography matrix
+        """
+        # Convert to grayscale
+        gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
+        gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+        
+        # Detect Harris corners in both images
+        x1, y1 = self.harris_corner(gray1, k)
+        x2, y2 = self.harris_corner(gray2, k)
+        
+        print(f"Detected {len(x1)} corners in image 1, {len(x2)} corners in image 2")
+        
+        if len(x1) < 4 or len(x2) < 4:
+            print("Not enough corners detected for matching")
+            return img2, None
+        
+        # Create corner coordinate arrays
+        corners1 = np.column_stack((x1, y1))
+        corners2 = np.column_stack((x2, y2))
+        
+        # Match features between images
+        matches = self.match_features(corners1, corners2)
+        print(f"Found {len(matches)} feature matches")
+        
+        if len(matches) < 4:
+            print("Not enough matches for RANSAC")
+            return img2, None
+        
+        # Apply RANSAC to find robust homography
+        homography, inliers = self.ransac_homography(matches, corners1, corners2)
+        
+        if homography is None:
+            print("RANSAC failed to find valid homography")
+            return img2, None
+        
+        print(f"RANSAC found {len(inliers)} inliers out of {len(matches)} matches")
+        
+        # Create mosaic using the robust homography
+        mosaic = Image_Mosaic()
+        warped_img1 = mosaic.image_warp_inv(img1, img2, homography)
+        result = mosaic.output_mosaic(img2, warped_img1)
+        
+        return result, homography
+
 
 
 
@@ -856,7 +1007,7 @@ class Image_Mosaic(object):
         Output -
         :return: Inverse Warped Resulting Image
         '''
-        
+
         # Get dimensions of destination image
         h_dst, w_dst = im_dst.shape[:2]
         
@@ -893,7 +1044,7 @@ class Image_Mosaic(object):
         
         # Set invalid pixels to black
         warped_img[~valid_mask] = 0
-        
+
         return warped_img
 
 
@@ -905,7 +1056,7 @@ class Image_Mosaic(object):
         Output -
         :return: Output Image Mosiac
         '''
-        
+
         # Create a copy of the warped image as the base
         im_mos_out = img_warped.copy()
         
@@ -928,7 +1079,7 @@ class Image_Mosaic(object):
             alpha = 0.5  # 50% blend
             im_mos_out[overlap_mask] = (alpha * img_src[overlap_mask] + 
                                        (1 - alpha) * img_warped[overlap_mask]).astype(np.uint8)
-        
+
         return im_mos_out
 
 
