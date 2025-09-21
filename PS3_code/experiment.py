@@ -18,7 +18,7 @@ import ps3
 
 IMG_DIR = "input_images"
 VID_DIR = "input_videos"
-OUT_DIR = "./"
+OUT_DIR = "output"
 if not os.path.isdir(OUT_DIR):
     os.makedirs(OUT_DIR)
 
@@ -32,7 +32,7 @@ def helper_for_part_4_and_5(video_name, fps, frame_ids, output_prefix,
     image = image_gen.__next__()
     h, w, d = image.shape
 
-    out_path = "ar_{}-{}".format(output_prefix[4:], video_name)
+    out_path = os.path.join(OUT_DIR, "ar_{}-{}".format(output_prefix[4:], video_name))
     video_out = mp4_video_writer(out_path, (w, h), fps)
 
     # Optional template image
@@ -136,7 +136,7 @@ def part_1():
         for marker in marker_positions:
             mark_location(scene, marker)
 
-        # save_image(img_out, scene)
+        save_image(img_out, scene)
 
 
 def part_2():
@@ -161,7 +161,7 @@ def part_2():
         markers = ps3.find_markers(scene, template)
         image_with_box = ps3.draw_box(scene, markers, 3)
 
-        # save_image(img_out, image_with_box)
+        save_image(img_out, image_with_box)
 
 
 def part_3():
@@ -191,7 +191,7 @@ def part_3():
         projected_img = ps3.project_imageA_onto_imageB(advert, scene,
                                                        homography)
 
-        # save_image(img_out, projected_img)
+        save_image(img_out, projected_img)
 
 
 def part_4_a():
@@ -315,14 +315,14 @@ def part_9_a(homography_parameters, path1, path2):
 
 
     cv2.namedWindow("Warped Source Image", cv2.WINDOW_NORMAL)
-    cv2.imwrite(IMG_DIR + '\warped_image_a.jpg', im_warped)
+    cv2.imwrite(os.path.join(OUT_DIR, 'ps3-9-1.jpg'), im_warped)
     im_warped = cv2.normalize(im_warped, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8UC1)
     cv2.imshow("Warped Source Image", im_warped)
 
     im_out_mosaic = Image_Mosaic().output_mosaic(im_src, im_warped)
 
     cv2.namedWindow("Output Mosaic Image", cv2.WINDOW_NORMAL)
-    cv2.imwrite(IMG_DIR + '\image_mosiac_a.jpg', im_out_mosaic)
+    cv2.imwrite(os.path.join(OUT_DIR, 'ps3-9-2.jpg'), im_out_mosaic)
     cv2.imshow("Output Mosaic Image", im_out_mosaic)
 
     cv2.waitKey(0)
