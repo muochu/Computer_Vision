@@ -179,9 +179,15 @@ def get_corners_list(image):
             in the order [top-left, bottom-left, top-right, bottom-right]
     """
     height, width = image.shape[:2]
-    corners = []
-
-    raise NotImplementedError
+    
+    # Return corners in order: top-left, bottom-left, top-right, bottom-right
+    corners = [
+        (0, 0),                    # top-left
+        (0, height - 1),           # bottom-left
+        (width - 1, 0),            # top-right
+        (width - 1, height - 1)    # bottom-right
+    ]
+    
     return corners
 
 
@@ -526,8 +532,45 @@ def project_imageA_onto_imageB(imageA, imageB, homography):
     """
 
     out_image = imageB.copy()
-
-    raise NotImplementedError
+    
+    # Get dimensions of both images
+    hB, wB = imageB.shape[:2]
+    hA, wA = imageA.shape[:2]
+    
+    # Create coordinate grids for the destination image
+    y_coords, x_coords = np.mgrid[0:hB, 0:wB]
+    
+    # Convert to homogeneous coordinates
+    ones = np.ones((hB, wB))
+    dest_coords = np.stack([x_coords, y_coords, ones], axis=2)
+    
+    # Apply inverse homography to get source coordinates
+    # We need to solve for source coordinates: H * src = dest
+    # So: src = H^(-1) * dest
+    inv_homography = np.linalg.inv(homography)
+    
+    # Transform all destination coordinates to source coordinates
+    source_coords = np.dot(dest_coords, inv_homography.T)
+    
+    # Normalize homogeneous coordinates
+    x_src = source_coords[:, :, 0] / source_coords[:, :, 2]
+    y_src = source_coords[:, :, 1] / source_coords[:, :, 2]
+    
+    # Create masks for valid coordinates (within source image bounds)
+    valid_mask = ((x_src >= 0) & (x_src < wA) & 
+                  (y_src >= 0) & (y_src < hA))
+    
+    # Use bilinear interpolation to sample from imageA
+    # Create coordinate maps for cv2.remap
+    map_x = x_src.astype(np.float32)
+    map_y = y_src.astype(np.float32)
+    
+    # Remap imageA to the destination coordinates
+    warped_A = cv2.remap(imageA, map_x, map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+    
+    # Only copy pixels where the mask is valid
+    out_image[valid_mask] = warped_A[valid_mask]
+    
     return out_image
 
 
@@ -547,8 +590,36 @@ def find_four_point_transform(srcPoints, dstPoints):
     Returns:
         numpy.array: 3 by 3 homography matrix of floating point values
     """
-
-    raise NotImplementedError
+    
+    # Convert to numpy arrays
+    src = np.array(srcPoints, dtype=np.float64)
+    dst = np.array(dstPoints, dtype=np.float64)
+    
+    # Build the coefficient matrix A for the system Ah = 0
+    # Each point pair gives us 2 equations, so we need 8 equations for 8 unknowns
+    A = []
+    
+    for i in range(4):
+        x, y = src[i]
+        u, v = dst[i]
+        
+        # First equation for this point pair
+        A.append([x, y, 1, 0, 0, 0, -u*x, -u*y, -u])
+        # Second equation for this point pair  
+        A.append([0, 0, 0, x, y, 1, -v*x, -v*y, -v])
+    
+    A = np.array(A, dtype=np.float64)
+    
+    # Solve using SVD to find the null space
+    _, _, V = np.linalg.svd(A)
+    
+    # The solution is the last column of V
+    h = V[-1, :]
+    
+    # Reshape to 3x3 matrix and normalize so that H[2,2] = 1
+    homography = h.reshape(3, 3)
+    homography = homography / homography[2, 2]
+    
     return homography
 
 
