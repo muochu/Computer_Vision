@@ -164,9 +164,15 @@ def euclidean_distance(p0, p1):
     Return:
         float: The distance between points
     """
-
-    raise NotImplementedError
-    return 0.0
+    
+    # Convert to numpy arrays if needed
+    p0 = np.array(p0)
+    p1 = np.array(p1)
+    
+    # Calculate Euclidean distance
+    distance = np.sqrt(np.sum((p0 - p1) ** 2))
+    
+    return distance
 
 
 def get_corners_list(image):
@@ -679,7 +685,9 @@ class Automatic_Corner_Detection(object):
                     in y-direction
         '''
 
-        raise NotImplementedError
+        # Apply Sobel filters using convolution
+        Ix = cv2.filter2D(image_bw.astype(np.float32), -1, self.SOBEL_X)
+        Iy = cv2.filter2D(image_bw.astype(np.float32), -1, self.SOBEL_Y)
 
         return Ix, Iy
 
@@ -701,9 +709,22 @@ class Automatic_Corner_Detection(object):
                     y direction
         """
 
-        sx2, sy2, sxsy = None, None, None
-
-        raise NotImplementedError
+        # Get image gradients
+        Ix, Iy = self.gradients(image_bw)
+        
+        # Compute products of gradients
+        Ix2 = Ix * Ix
+        Iy2 = Iy * Iy
+        Ixy = Ix * Iy
+        
+        # Create Gaussian kernel
+        gaussian_kernel = cv2.getGaussianKernel(ksize, sigma)
+        gaussian_kernel_2d = gaussian_kernel @ gaussian_kernel.T
+        
+        # Apply Gaussian smoothing to get second moments
+        sx2 = cv2.filter2D(Ix2, -1, gaussian_kernel_2d)
+        sy2 = cv2.filter2D(Iy2, -1, gaussian_kernel_2d)
+        sxsy = cv2.filter2D(Ixy, -1, gaussian_kernel_2d)
 
         return sx2, sy2, sxsy
 
@@ -730,8 +751,18 @@ class Automatic_Corner_Detection(object):
             :return R: np array of shape (M,N), indicating the corner score of each pixel.
             """
 
-
-        raise NotImplementedError
+        # Get second moments
+        sx2, sy2, sxsy = self.second_moments(image_bw, ksize, sigma)
+        
+        # Compute Harris response: R = det(M) - alpha * trace(M)^2
+        # where M = [sx2  sxsy]
+        #           [sxsy sy2 ]
+        # det(M) = sx2 * sy2 - sxsy^2
+        # trace(M) = sx2 + sy2
+        
+        det_M = sx2 * sy2 - sxsy * sxsy
+        trace_M = sx2 + sy2
+        R = det_M - alpha * (trace_M * trace_M)
 
         return R
 
@@ -757,9 +788,33 @@ class Automatic_Corner_Detection(object):
             y: np array of shape (k,) containing y-coordinates of interest points
         """
 
-
-
-        raise NotImplementedError
+        # Threshold below median to zero
+        median_val = np.median(R)
+        R_thresholded = np.where(R >= median_val, R, 0)
+        
+        # MaxPool over ksize x ksize kernel
+        # Use max pooling to find local maxima
+        max_pooled = cv2.dilate(R_thresholded, np.ones((ksize, ksize), np.uint8))
+        
+        # Binarize: locations that are equal to their maximum
+        binary_mask = (R_thresholded == max_pooled) & (R_thresholded > 0)
+        
+        # Get coordinates of interest points
+        y_coords, x_coords = np.where(binary_mask)
+        
+        # Get corresponding scores
+        scores = R_thresholded[binary_mask]
+        
+        # Sort by score and take top k
+        if len(scores) > 0:
+            sorted_indices = np.argsort(scores)[::-1]  # Descending order
+            top_k_indices = sorted_indices[:k]
+            
+            x = x_coords[top_k_indices]
+            y = y_coords[top_k_indices]
+        else:
+            x = np.array([])
+            y = np.array([])
 
         return x, y
 
@@ -775,9 +830,13 @@ class Automatic_Corner_Detection(object):
             :return y: np array of shape (p,) containing y-coordinates of interest points
             """
 
-        raise NotImplementedError
+        # Compute Harris response map
+        R = self.harris_response_map(image_bw)
+        
+        # Apply non-maximum suppression to get top k corners
+        x, y = self.nms_maxpool(R, k, ksize=7)
 
-        return x1, y1
+        return x, y
 
 
 
@@ -797,10 +856,44 @@ class Image_Mosaic(object):
         Output -
         :return: Inverse Warped Resulting Image
         '''
-
-
-        raise NotImplementedError
-
+        
+        # Get dimensions of destination image
+        h_dst, w_dst = im_dst.shape[:2]
+        
+        # Create coordinate grids for the destination image
+        y_coords, x_coords = np.mgrid[0:h_dst, 0:w_dst]
+        
+        # Convert to homogeneous coordinates
+        ones = np.ones((h_dst, w_dst))
+        dest_coords = np.stack([x_coords, y_coords, ones], axis=2)
+        
+        # Apply inverse homography to get source coordinates
+        # source coordinates: H * src = dest
+        # src = H^(-1) * dest
+        inv_H = np.linalg.inv(H)
+        
+        # Transform all destination coordinates to source coordinates
+        source_coords = np.dot(dest_coords, inv_H.T)
+        
+        # Normalize homogeneous coordinates
+        x_src = source_coords[:, :, 0] / source_coords[:, :, 2]
+        y_src = source_coords[:, :, 1] / source_coords[:, :, 2]
+        
+        # Create masks for valid coordinates (within source image bounds)
+        h_src, w_src = im_src.shape[:2]
+        valid_mask = ((x_src >= 0) & (x_src < w_src) & 
+                      (y_src >= 0) & (y_src < h_src))
+        
+        # Use bilinear interpolation to sample from source image
+        map_x = x_src.astype(np.float32)
+        map_y = y_src.astype(np.float32)
+        
+        # Remap source image to the destination coordinates
+        warped_img = cv2.remap(im_src, map_x, map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+        
+        # Set invalid pixels to black
+        warped_img[~valid_mask] = 0
+        
         return warped_img
 
 
@@ -812,10 +905,30 @@ class Image_Mosaic(object):
         Output -
         :return: Output Image Mosiac
         '''
-
-
-        raise NotImplementedError
-
+        
+        # Create a copy of the warped image as the base
+        im_mos_out = img_warped.copy()
+        
+        # Create a mask to identify non-black pixels in the warped image
+        # Non-black pixels indicate areas where the source image was warped
+        warped_mask = np.any(img_warped > 0, axis=2)
+        
+        # Create a mask for the source image (non-black pixels)
+        src_mask = np.any(img_src > 0, axis=2)
+        
+        # Find the overlap region where both images have content
+        overlap_mask = warped_mask & src_mask
+        
+        # For non-overlap regions, use the source image where the warped image is black
+        im_mos_out[~warped_mask] = img_src[~warped_mask]
+        
+        # For overlap regions, blend the two images using alpha blending
+        # Simple average blending for overlap areas
+        if np.any(overlap_mask):
+            alpha = 0.5  # 50% blend
+            im_mos_out[overlap_mask] = (alpha * img_src[overlap_mask] + 
+                                       (1 - alpha) * img_warped[overlap_mask]).astype(np.uint8)
+        
         return im_mos_out
 
 
