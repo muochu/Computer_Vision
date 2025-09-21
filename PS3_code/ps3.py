@@ -481,8 +481,33 @@ def draw_box(image, markers, thickness=1):
     Returns:
         numpy.array: image with lines drawn.
     """
-
-    raise NotImplementedError
+    
+    # Create a copy of the input image to avoid modifying the original
+    out_image = image.copy()
+    
+    # Validate that we have exactly 4 markers
+    if len(markers) != 4:
+        return out_image
+    
+    # Convert markers to numpy array for easier handling
+    markers = np.array(markers, dtype=np.int32)
+    
+    # Draw lines connecting the four markers to form a box
+    # The markers should be in order top left, bottom left, top right, bottom right
+    # Connect top left to top right to bottom right to bottom left to top left
+    
+    # Top edge from top left to top right
+    cv2.line(out_image, tuple(markers[0]), tuple(markers[2]), (0, 0, 255), thickness)
+    
+    # Right edge from top right to bottom right  
+    cv2.line(out_image, tuple(markers[2]), tuple(markers[3]), (0, 0, 255), thickness)
+    
+    # Bottom edge from bottom right to bottom left
+    cv2.line(out_image, tuple(markers[3]), tuple(markers[1]), (0, 0, 255), thickness)
+    
+    # Left edge from bottom left to top left
+    cv2.line(out_image, tuple(markers[1]), tuple(markers[0]), (0, 0, 255), thickness)
+    
     return out_image
 
 
