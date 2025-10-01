@@ -702,9 +702,9 @@ class Automatic_Corner_Detection(object):
                     in y-direction
         '''
 
-        # Apply Sobel filters using convolution
-        Ix = cv2.filter2D(image_bw.astype(np.float32), -1, self.SOBEL_X)
-        Iy = cv2.filter2D(image_bw.astype(np.float32), -1, self.SOBEL_Y)
+        # apply sobel filters with zero padding at borders
+        Ix = cv2.Sobel(image_bw.astype(np.float32), cv2.CV_32F, 1, 0, ksize=3, borderType=cv2.BORDER_CONSTANT)
+        Iy = cv2.Sobel(image_bw.astype(np.float32), cv2.CV_32F, 0, 1, ksize=3, borderType=cv2.BORDER_CONSTANT)
 
         return Ix, Iy
 
@@ -726,22 +726,19 @@ class Automatic_Corner_Detection(object):
                     y direction
         """
 
-        # Get image gradients
+        # get image gradients
         Ix, Iy = self.gradients(image_bw)
         
-        # Compute products of gradients
+        # compute products of gradients
         Ix2 = Ix * Ix
         Iy2 = Iy * Iy
         Ixy = Ix * Iy
         
-        # Create Gaussian kernel
-        gaussian_kernel = cv2.getGaussianKernel(ksize, sigma)
-        gaussian_kernel_2d = gaussian_kernel @ gaussian_kernel.T
-        
-        # Apply Gaussian smoothing to get second moments
-        sx2 = cv2.filter2D(Ix2, -1, gaussian_kernel_2d)
-        sy2 = cv2.filter2D(Iy2, -1, gaussian_kernel_2d)
-        sxsy = cv2.filter2D(Ixy, -1, gaussian_kernel_2d)
+        # apply gaussian smoothing to get second moments
+        # use GaussianBlur which properly normalizes the kernel
+        sx2 = cv2.GaussianBlur(Ix2, (ksize, ksize), sigma, borderType=cv2.BORDER_CONSTANT)
+        sy2 = cv2.GaussianBlur(Iy2, (ksize, ksize), sigma, borderType=cv2.BORDER_CONSTANT)
+        sxsy = cv2.GaussianBlur(Ixy, (ksize, ksize), sigma, borderType=cv2.BORDER_CONSTANT)
 
         return sx2, sy2, sxsy
 
@@ -768,10 +765,10 @@ class Automatic_Corner_Detection(object):
             :return R: np array of shape (M,N), indicating the corner score of each pixel.
             """
 
-        # Get second moments
+        # get second moments
         sx2, sy2, sxsy = self.second_moments(image_bw, ksize, sigma)
         
-        # Compute Harris response: R = det(M) - alpha * trace(M)^2
+        # compute Harris response: R = det(M) - alpha * trace(M)^2
         # where M = sx2  sxsy
         #           sxsy sy2
         # det(M) equals sx2 * sy2 - sxsy^2
@@ -780,7 +777,11 @@ class Automatic_Corner_Detection(object):
         det_M = sx2 * sy2 - sxsy * sxsy
         trace_M = sx2 + sy2
         R = det_M - alpha * (trace_M * trace_M)
-
+        
+        # normalize response map to 0-1 range
+        if R.max() > R.min():
+            R = (R - R.min()) / (R.max() - R.min())
+        
         return R
 
 
