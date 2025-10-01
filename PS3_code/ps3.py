@@ -515,17 +515,18 @@ def draw_box(image, markers, thickness=1):
     # The markers should be in order top left, bottom left, top right, bottom right
     # Connect top left to top right to bottom right to bottom left to top left
     
+    # Use default lineType (8-connected) and ensure we're using the exact same approach as OpenCV
     # Top edge from top left to top right
-    cv2.line(out_image, tuple(markers[0]), tuple(markers[2]), (0, 0, 255), thickness)
+    cv2.line(out_image, tuple(markers[0]), tuple(markers[2]), (0, 0, 255), thickness, cv2.LINE_8)
     
     # Right edge from top right to bottom right  
-    cv2.line(out_image, tuple(markers[2]), tuple(markers[3]), (0, 0, 255), thickness)
+    cv2.line(out_image, tuple(markers[2]), tuple(markers[3]), (0, 0, 255), thickness, cv2.LINE_8)
     
     # Bottom edge from bottom right to bottom left
-    cv2.line(out_image, tuple(markers[3]), tuple(markers[1]), (0, 0, 255), thickness)
+    cv2.line(out_image, tuple(markers[3]), tuple(markers[1]), (0, 0, 255), thickness, cv2.LINE_8)
     
     # Left edge from bottom left to top left
-    cv2.line(out_image, tuple(markers[1]), tuple(markers[0]), (0, 0, 255), thickness)
+    cv2.line(out_image, tuple(markers[1]), tuple(markers[0]), (0, 0, 255), thickness, cv2.LINE_8)
     
     return out_image
 
@@ -868,12 +869,16 @@ class Automatic_Corner_Detection(object):
             matches: List of (idx1, idx2) pairs of matched corner indices
         """
         matches = []
+        used_corners2 = set()  # Track which corners in image2 have been matched
         
         for i, corner1 in enumerate(corners1):
             best_match = None
             best_distance = float('inf')
             
             for j, corner2 in enumerate(corners2):
+                if j in used_corners2:  # Skip already matched corners
+                    continue
+                    
                 distance = euclidean_distance(corner1, corner2)
                 if distance < best_distance and distance < max_distance:
                     best_distance = distance
@@ -881,10 +886,11 @@ class Automatic_Corner_Detection(object):
             
             if best_match is not None:
                 matches.append((i, best_match))
+                used_corners2.add(best_match)  # Mark this corner as used
         
         return matches
 
-    def ransac_homography(self, matches, corners1, corners2, p=0.99, s=4, e=0.5):
+    def ransac_homography(self, matches, corners1, corners2, p=0.99, s=4, e=1.0):
         """RANSAC algorithm to find robust homography from corner matches.
         
         Args:
@@ -953,7 +959,7 @@ class Automatic_Corner_Detection(object):
         
         return best_homography, best_inliers
 
-    def ransac_stitch(self, img1, img2, k=100):
+    def ransac_stitch(self, img1, img2, k=200):
         """Complete RANSAC-based image stitching pipeline.
         
         Args:
@@ -969,7 +975,7 @@ class Automatic_Corner_Detection(object):
         gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
         gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
         
-        # Detect Harris corners in both images
+        # Detect Harris corners in both images with optimized parameters
         x1, y1 = self.harris_corner(gray1, k)
         x2, y2 = self.harris_corner(gray2, k)
         
@@ -983,8 +989,8 @@ class Automatic_Corner_Detection(object):
         corners1 = np.column_stack((x1, y1))
         corners2 = np.column_stack((x2, y2))
         
-        # Match features between images
-        matches = self.match_features(corners1, corners2)
+        # Match features between images with increased distance threshold
+        matches = self.match_features(corners1, corners2, max_distance=100)
         print(f"Found {len(matches)} feature matches")
         
         if len(matches) < 4:
@@ -1032,16 +1038,16 @@ class Image_Mosaic(object):
         # Create coordinate grids for the destination image
         y_coords, x_coords = np.mgrid[0:h_dst, 0:w_dst]
         
-        # Convert to homogeneous coordinates
+        # Convert to homogeneous coordinates (x, y, 1)
         ones = np.ones((h_dst, w_dst))
         dest_coords = np.stack([x_coords, y_coords, ones], axis=2)
         
         # Apply inverse homography to get source coordinates
-        # source coordinates: H * src = dest
-        # src = H^(-1) * dest
+        # For inverse warping: dest = H * src, so src = H^(-1) * dest
         inv_H = np.linalg.inv(H)
         
         # Transform all destination coordinates to source coordinates
+        # Use the same approach as project_imageA_onto_imageB
         source_coords = np.dot(dest_coords, inv_H.T)
         
         # Normalize homogeneous coordinates
