@@ -201,8 +201,21 @@ def reduce_image(image):
         numpy.array: output image with half the shape, same type as the
                      input image.
     """
-
-    raise NotImplementedError
+    # 5-tap separable filter for reduce operation
+    # [1, 4, 6, 4, 1] / 16
+    kernel_1d = np.array([1, 4, 6, 4, 1], dtype=np.float64) / 16.0
+    
+    # apply separable convolution
+    # first convolve horizontally
+    temp = cv2.filter2D(image, -1, kernel_1d.reshape(1, -1))
+    # then convolve vertically  
+    blurred = cv2.filter2D(temp, -1, kernel_1d.reshape(-1, 1))
+    
+    # downsample by factor of 2 (take every other pixel)
+    h, w = blurred.shape
+    reduced = blurred[::2, ::2]
+    
+    return reduced
 
 
 def gaussian_pyramid(image, levels):
@@ -226,8 +239,15 @@ def gaussian_pyramid(image, levels):
     Returns:
         list: Gaussian pyramid, list of numpy.arrays.
     """
-
-    raise NotImplementedError
+    pyramid = []
+    current_image = image.copy()
+    
+    for i in range(levels):
+        pyramid.append(current_image)
+        if i < levels - 1:  # don't reduce the last level
+            current_image = reduce_image(current_image)
+    
+    return pyramid
 
 
 def create_combined_img(img_list):
@@ -248,8 +268,34 @@ def create_combined_img(img_list):
         numpy.array: output image with the pyramid images stacked
                      from left to right.
     """
-
-    raise NotImplementedError
+    if not img_list:
+        return np.array([])
+    
+    # normalize and scale each image
+    normalized_images = []
+    for img in img_list:
+        normalized = normalize_and_scale(img)
+        normalized_images.append(normalized)
+    
+    # get dimensions
+    heights = [img.shape[0] for img in normalized_images]
+    widths = [img.shape[1] for img in normalized_images]
+    
+    # total width is sum of all widths
+    total_width = sum(widths)
+    max_height = max(heights)
+    
+    # create combined image
+    combined = np.zeros((max_height, total_width), dtype=np.uint8)
+    
+    # place images side by side
+    x_offset = 0
+    for img in normalized_images:
+        h, w = img.shape
+        combined[:h, x_offset:x_offset+w] = img
+        x_offset += w
+    
+    return combined
 
 
 def expand_image(image):
@@ -272,8 +318,23 @@ def expand_image(image):
         numpy.array: same type as 'image' with the doubled height and
                      width.
     """
-
-    raise NotImplementedError
+    h, w = image.shape
+    
+    # upsample by inserting zeros between pixels
+    upsampled = np.zeros((h*2, w*2), dtype=image.dtype)
+    upsampled[::2, ::2] = image * 4  # multiply by 4 to compensate for zero insertion
+    
+    # 5-tap separable filter for expand operation
+    # [1, 4, 6, 4, 1] / 16 (same as reduce but used differently)
+    kernel_1d = np.array([1, 4, 6, 4, 1], dtype=np.float64) / 16.0
+    
+    # apply separable convolution
+    # first convolve horizontally
+    temp = cv2.filter2D(upsampled, -1, kernel_1d.reshape(1, -1))
+    # then convolve vertically
+    expanded = cv2.filter2D(temp, -1, kernel_1d.reshape(-1, 1))
+    
+    return expanded
 
 
 def laplacian_pyramid(g_pyr):
@@ -287,8 +348,25 @@ def laplacian_pyramid(g_pyr):
     Returns:
         list: Laplacian pyramid, with l_pyr[-1] = g_pyr[-1].
     """
-
-    raise NotImplementedError
+    l_pyr = []
+    
+    # for each level except the last one
+    for i in range(len(g_pyr) - 1):
+        # expand the next level to match current level size
+        expanded = expand_image(g_pyr[i + 1])
+        
+        # crop expanded image to match current level size
+        current_h, current_w = g_pyr[i].shape
+        expanded = expanded[:current_h, :current_w]
+        
+        # laplacian = gaussian - expanded_gaussian
+        laplacian = g_pyr[i] - expanded
+        l_pyr.append(laplacian)
+    
+    # last level is just the smallest gaussian
+    l_pyr.append(g_pyr[-1])
+    
+    return l_pyr
 
 
 def warp(image, U, V, interpolation, border_mode):
