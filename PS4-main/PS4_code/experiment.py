@@ -9,7 +9,7 @@ import ps4
 
 # I/O directories
 input_dir = "input_images"
-output_dir = "./"
+output_dir = "output"
 
 # Utility code
 def quiver(u, v, scale, stride, color=(0, 255, 0)):
@@ -92,7 +92,7 @@ def part_1a():
 
     # flow image
     u_v = quiver(u, v, scale=3, stride=10)
-    cv2.imwrite(os.path.join(output_dir, "ps4-1-a-1.png"), u_v)
+    cv2.imwrite(os.path.join(output_dir, "ps4-1-a-1.jpg"), u_v)
 
     # Now let's try with ShiftR5U5. You may want to try smoothing the
     # input images first.
@@ -104,7 +104,7 @@ def part_1a():
 
     # flow image
     u_v = quiver(u, v, scale=3, stride=10)
-    cv2.imwrite(os.path.join(output_dir, "ps4-1-a-2.png"), u_v)
+    cv2.imwrite(os.path.join(output_dir, "ps4-1-a-2.jpg"), u_v)
 
 
 def part_1b():
@@ -121,9 +121,9 @@ def part_1b():
     input images to improve your results.
 
     In this part you should save the following images:
-    - ps4-1-b-1.png
-    - ps4-1-b-2.png
-    - ps4-1-b-3.png
+    - ps4-1-b-1.jpg
+    - ps4-1-b-2.jpg
+    - ps4-1-b-3.jpg
 
     Returns:
         None
@@ -137,7 +137,25 @@ def part_1b():
     shift_r40 = cv2.imread(os.path.join(input_dir, 'TestSeq', 'ShiftR40.png'),
                            0) / 255.
 
-    raise NotImplementedError
+    # test different parameters for larger displacements
+    k_size = 25  # larger kernel for smoother results
+    k_type = "uniform"
+    sigma = 1
+    
+    # shift0 vs shiftr10
+    u, v = ps4.optic_flow_lk(shift_0, shift_r10, k_size, k_type, sigma)
+    u_v = quiver(u, v, scale=3, stride=10)
+    cv2.imwrite(os.path.join(output_dir, "ps4-1-b-1.jpg"), u_v)
+    
+    # shift0 vs shiftr20
+    u, v = ps4.optic_flow_lk(shift_0, shift_r20, k_size, k_type, sigma)
+    u_v = quiver(u, v, scale=3, stride=10)
+    cv2.imwrite(os.path.join(output_dir, "ps4-1-b-2.jpg"), u_v)
+    
+    # shift0 vs shiftr40
+    u, v = ps4.optic_flow_lk(shift_0, shift_r40, k_size, k_type, sigma)
+    u_v = quiver(u, v, scale=3, stride=10)
+    cv2.imwrite(os.path.join(output_dir, "ps4-1-b-3.jpg"), u_v)
 
 
 def part_2():
@@ -149,14 +167,14 @@ def part_2():
     levels = 4
     yos_img_01_g_pyr = ps4.gaussian_pyramid(yos_img_01, levels)
     yos_img_01_g_pyr_img = ps4.create_combined_img(yos_img_01_g_pyr)
-    cv2.imwrite(os.path.join(output_dir, "ps4-2-a-1.png"),
+    cv2.imwrite(os.path.join(output_dir, "ps4-2-a-1.jpg"),
                 yos_img_01_g_pyr_img)
 
     # 2b
     yos_img_01_l_pyr = ps4.laplacian_pyramid(yos_img_01_g_pyr)
 
     yos_img_01_l_pyr_img = ps4.create_combined_img(yos_img_01_l_pyr)
-    cv2.imwrite(os.path.join(output_dir, "ps4-2-b-1.png"),
+    cv2.imwrite(os.path.join(output_dir, "ps4-2-b-1.jpg"),
                 yos_img_01_l_pyr_img)
 
 
@@ -184,7 +202,7 @@ def part_3a_1():
     yos_img_02_warped = ps4.warp(yos_img_02, u, v, interpolation, border_mode)
 
     diff_yos_img_01_02 = yos_img_01 - yos_img_02_warped
-    cv2.imwrite(os.path.join(output_dir, "ps4-3-a-1.png"),
+    cv2.imwrite(os.path.join(output_dir, "ps4-3-a-1.jpg"),
                 ps4.normalize_and_scale(diff_yos_img_01_02))
 
 
@@ -212,7 +230,7 @@ def part_3a_2():
     yos_img_03_warped = ps4.warp(yos_img_03, u, v, interpolation, border_mode)
 
     diff_yos_img = yos_img_02 - yos_img_03_warped
-    cv2.imwrite(os.path.join(output_dir, "ps4-3-a-2.png"),
+    cv2.imwrite(os.path.join(output_dir, "ps4-3-a-2.jpg"),
                 ps4.normalize_and_scale(diff_yos_img))
 
 
@@ -237,7 +255,7 @@ def part_4a():
                                    sigma, interpolation, border_mode)
 
     u_v = quiver(u10, v10, scale=3, stride=10)
-    cv2.imwrite(os.path.join(output_dir, "ps4-4-a-1.png"), u_v)
+    cv2.imwrite(os.path.join(output_dir, "ps4-4-a-1.jpg"), u_v)
 
     # You may want to try different parameters for the remaining function
     # calls.
@@ -245,12 +263,12 @@ def part_4a():
                                    sigma, interpolation, border_mode)
 
     u_v = quiver(u20, v20, scale=3, stride=10)
-    cv2.imwrite(os.path.join(output_dir, "ps4-4-a-2.png"), u_v)
+    cv2.imwrite(os.path.join(output_dir, "ps4-4-a-2.jpg"), u_v)
 
     u40, v40 = ps4.hierarchical_lk(shift_0, shift_r40, levels, k_size, k_type,
                                    sigma, interpolation, border_mode)
     u_v = quiver(u40, v40, scale=3, stride=10)
-    cv2.imwrite(os.path.join(output_dir, "ps4-4-a-3.png"), u_v)
+    cv2.imwrite(os.path.join(output_dir, "ps4-4-a-3.jpg"), u_v)
 
 
 def part_4b():
@@ -270,7 +288,7 @@ def part_4b():
                                k_type, sigma, interpolation, border_mode)
 
     u_v = quiver(u, v, scale=3, stride=10)
-    cv2.imwrite(os.path.join(output_dir, "ps4-4-b-1.png"), u_v)
+    cv2.imwrite(os.path.join(output_dir, "ps4-4-b-1.jpg"), u_v)
 
     interpolation = cv2.INTER_CUBIC  # You may try different values
     border_mode = cv2.BORDER_REFLECT101  # You may try different values
@@ -278,7 +296,7 @@ def part_4b():
                                    border_mode)
 
     diff_img = urban_img_01 - urban_img_02_warped
-    cv2.imwrite(os.path.join(output_dir, "ps4-4-b-2.png"),
+    cv2.imwrite(os.path.join(output_dir, "ps4-4-b-2.jpg"),
                 ps4.normalize_and_scale(diff_img))
 
 
