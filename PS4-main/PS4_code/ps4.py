@@ -278,8 +278,8 @@ def create_combined_img(img_list):
         normalized_images.append(normalized)
     
     # get dimensions
-    heights = [img.shape[0] for img in normalized_images]
-    widths = [img.shape[1] for img in normalized_images]
+    heights = [img.shape[0] for img in img_list]
+    widths = [img.shape[1] for img in img_list]
     
     # total width is sum of all widths
     total_width = sum(widths)
@@ -290,9 +290,10 @@ def create_combined_img(img_list):
     
     # place images side by side
     x_offset = 0
-    for img in normalized_images:
+    for i, img in enumerate(normalized_images):
         h, w = img.shape
-        combined[:h, x_offset:x_offset+w] = img
+        # place image at top-left of its section
+        combined[0:h, x_offset:x_offset+w] = img
         x_offset += w
     
     return combined

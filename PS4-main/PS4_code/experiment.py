@@ -329,8 +329,48 @@ def part_5a():
 
     Place all your work in this file and this section.
     """
+    # load two frames for interpolation
+    shift_0 = cv2.imread(os.path.join(input_dir, 'TestSeq', 'Shift0.png'), 0) / 255.
+    shift_r10 = cv2.imread(os.path.join(input_dir, 'TestSeq', 'ShiftR10.png'), 0) / 255.
 
-    raise NotImplementedError
+    # compute optical flow from frame 0 to frame 1
+    levels = 1
+    k_size = 15
+    k_type = "uniform"
+    sigma = 1
+    interpolation = cv2.INTER_CUBIC
+    border_mode = cv2.BORDER_REFLECT101
+
+    u, v = ps4.hierarchical_lk(shift_0, shift_r10, levels, k_size, k_type,
+                               sigma, interpolation, border_mode)
+
+    # create grid/mosaic comparing different interpolation methods
+    h, w = shift_0.shape
+    
+    # create 2x2 grid
+    grid_h, grid_w = h * 2, w * 2
+    grid_image = np.zeros((grid_h, grid_w), dtype=np.float64)
+    
+    # top-left: original frame 0
+    grid_image[0:h, 0:w] = shift_0
+    
+    # top-right: original frame 1
+    grid_image[0:h, w:2*w] = shift_r10
+    
+    # bottom-left: linear interpolation (t=0.5)
+    t = 0.5
+    shift_r10_warped = ps4.warp(shift_r10, u, v, cv2.INTER_LINEAR, border_mode)
+    interpolated_linear = (1 - t) * shift_0 + t * shift_r10_warped
+    grid_image[h:2*h, 0:w] = interpolated_linear
+    
+    # bottom-right: cubic interpolation (t=0.5)
+    shift_r10_warped_cubic = ps4.warp(shift_r10, u, v, cv2.INTER_CUBIC, border_mode)
+    interpolated_cubic = (1 - t) * shift_0 + t * shift_r10_warped_cubic
+    grid_image[h:2*h, w:2*w] = interpolated_cubic
+    
+    # normalize and save
+    grid_normalized = ps4.normalize_and_scale(grid_image)
+    cv2.imwrite(os.path.join(output_dir, "ps4-5-a-1.jpg"), grid_normalized)
 
 
 def part_5b():
@@ -340,8 +380,92 @@ def part_5b():
 
     Place all your work in this file and this section.
     """
+    # load two frames for interpolation
+    shift_0 = cv2.imread(os.path.join(input_dir, 'TestSeq', 'Shift0.png'), 0) / 255.
+    shift_r10 = cv2.imread(os.path.join(input_dir, 'TestSeq', 'ShiftR10.png'), 0) / 255.
 
-    raise NotImplementedError
+    # compute optical flow from frame 0 to frame 1
+    levels = 1
+    k_size = 15
+    k_type = "uniform"
+    sigma = 1
+    interpolation = cv2.INTER_CUBIC
+    border_mode = cv2.BORDER_REFLECT101
+
+    u, v = ps4.hierarchical_lk(shift_0, shift_r10, levels, k_size, k_type,
+                               sigma, interpolation, border_mode)
+
+    h, w = shift_0.shape
+    
+    # create 3x2 grid for different time points
+    grid_h, grid_w = h * 3, w * 2
+    grid_image_1 = np.zeros((grid_h, grid_w), dtype=np.float64)
+    
+    # row 1: t=0.25 interpolation with different methods
+    t = 0.25
+    shift_r10_warped_linear = ps4.warp(shift_r10, u, v, cv2.INTER_LINEAR, border_mode)
+    interpolated_linear = (1 - t) * shift_0 + t * shift_r10_warped_linear
+    grid_image_1[0:h, 0:w] = interpolated_linear
+    
+    shift_r10_warped_cubic = ps4.warp(shift_r10, u, v, cv2.INTER_CUBIC, border_mode)
+    interpolated_cubic = (1 - t) * shift_0 + t * shift_r10_warped_cubic
+    grid_image_1[0:h, w:2*w] = interpolated_cubic
+    
+    # row 2: t=0.5 interpolation with different methods
+    t = 0.5
+    shift_r10_warped_linear = ps4.warp(shift_r10, u, v, cv2.INTER_LINEAR, border_mode)
+    interpolated_linear = (1 - t) * shift_0 + t * shift_r10_warped_linear
+    grid_image_1[h:2*h, 0:w] = interpolated_linear
+    
+    shift_r10_warped_cubic = ps4.warp(shift_r10, u, v, cv2.INTER_CUBIC, border_mode)
+    interpolated_cubic = (1 - t) * shift_0 + t * shift_r10_warped_cubic
+    grid_image_1[h:2*h, w:2*w] = interpolated_cubic
+    
+    # row 3: t=0.75 interpolation with different methods
+    t = 0.75
+    shift_r10_warped_linear = ps4.warp(shift_r10, u, v, cv2.INTER_LINEAR, border_mode)
+    interpolated_linear = (1 - t) * shift_0 + t * shift_r10_warped_linear
+    grid_image_1[2*h:3*h, 0:w] = interpolated_linear
+    
+    shift_r10_warped_cubic = ps4.warp(shift_r10, u, v, cv2.INTER_CUBIC, border_mode)
+    interpolated_cubic = (1 - t) * shift_0 + t * shift_r10_warped_cubic
+    grid_image_1[2*h:3*h, w:2*w] = interpolated_cubic
+    
+    # save first grid
+    grid_normalized_1 = ps4.normalize_and_scale(grid_image_1)
+    cv2.imwrite(os.path.join(output_dir, "ps4-5-b-1.jpg"), grid_normalized_1)
+
+    # create second grid with different interpolation comparison
+    grid_image_2 = np.zeros((grid_h, grid_w), dtype=np.float64)
+    
+    # compare different border modes
+    border_modes = [cv2.BORDER_CONSTANT, cv2.BORDER_REFLECT101]
+    t = 0.5
+    
+    for i, border_mode in enumerate(border_modes):
+        shift_r10_warped = ps4.warp(shift_r10, u, v, cv2.INTER_CUBIC, border_mode)
+        interpolated = (1 - t) * shift_0 + t * shift_r10_warped
+        grid_image_2[0:h, i*w:(i+1)*w] = interpolated
+    
+    # compare different kernel sizes for optical flow
+    for i, k_size in enumerate([5, 25]):
+        u_diff, v_diff = ps4.hierarchical_lk(shift_0, shift_r10, levels, k_size, k_type,
+                                             sigma, cv2.INTER_CUBIC, cv2.BORDER_REFLECT101)
+        shift_r10_warped = ps4.warp(shift_r10, u_diff, v_diff, cv2.INTER_CUBIC, cv2.BORDER_REFLECT101)
+        interpolated = (1 - t) * shift_0 + t * shift_r10_warped
+        grid_image_2[h:2*h, i*w:(i+1)*w] = interpolated
+    
+    # compare different pyramid levels
+    for i, levels in enumerate([1, 3]):
+        u_levels, v_levels = ps4.hierarchical_lk(shift_0, shift_r10, levels, k_size, k_type,
+                                                 sigma, cv2.INTER_CUBIC, cv2.BORDER_REFLECT101)
+        shift_r10_warped = ps4.warp(shift_r10, u_levels, v_levels, cv2.INTER_CUBIC, cv2.BORDER_REFLECT101)
+        interpolated = (1 - t) * shift_0 + t * shift_r10_warped
+        grid_image_2[2*h:3*h, i*w:(i+1)*w] = interpolated
+    
+    # save second grid
+    grid_normalized_2 = ps4.normalize_and_scale(grid_image_2)
+    cv2.imwrite(os.path.join(output_dir, "ps4-5-b-2.jpg"), grid_normalized_2)
 
 
 def part_6():
