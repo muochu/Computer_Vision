@@ -271,12 +271,6 @@ def create_combined_img(img_list):
     if not img_list:
         return np.array([])
     
-    # normalize and scale each image
-    normalized_images = []
-    for img in img_list:
-        normalized = normalize_and_scale(img)
-        normalized_images.append(normalized)
-    
     # get dimensions
     heights = [img.shape[0] for img in img_list]
     widths = [img.shape[1] for img in img_list]
@@ -286,14 +280,16 @@ def create_combined_img(img_list):
     max_height = max(heights)
     
     # create combined image
-    combined = np.zeros((max_height, total_width), dtype=np.uint8)
+    combined = np.zeros((max_height, total_width), dtype=np.float64)
     
-    # place images side by side
+    # place images side by side with normalization
     x_offset = 0
-    for i, img in enumerate(normalized_images):
+    for img in img_list:
         h, w = img.shape
+        # normalize each image individually
+        normalized = normalize_and_scale(img)
         # place image at top-left of its section
-        combined[0:h, x_offset:x_offset+w] = img
+        combined[0:h, x_offset:x_offset+w] = normalized
         x_offset += w
     
     return combined
