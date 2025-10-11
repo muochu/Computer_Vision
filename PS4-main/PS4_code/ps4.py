@@ -134,12 +134,10 @@ def optic_flow_lk(img_a, img_b, k_size, k_type, sigma=1):
             V (numpy.array): raw displacement (in pixels) along
                              Y-axis, same size and type as U.
     """
-    # get gradients
     I_x = gradient_x(img_a)
     I_y = gradient_y(img_a)
     I_t = img_b - img_a
     
-    # make kernel
     if k_type == 'uniform':
         kernel = np.ones((k_size, k_size), dtype=np.float64) / (k_size * k_size)
     elif k_type == 'gaussian':
@@ -148,7 +146,6 @@ def optic_flow_lk(img_a, img_b, k_size, k_type, sigma=1):
     else:
         raise ValueError(f"Unknown kernel type: {k_type}")
     
-    # compute products for equations
     I_xx = cv2.filter2D(I_x * I_x, -1, kernel)
     I_yy = cv2.filter2D(I_y * I_y, -1, kernel)
     I_xy = cv2.filter2D(I_x * I_y, -1, kernel)
@@ -201,18 +198,11 @@ def reduce_image(image):
         numpy.array: output image with half the shape, same type as the
                      input image.
     """
-    # 5-tap separable filter for reduce operation
-    # [1, 4, 6, 4, 1] / 16
     kernel_1d = np.array([1, 4, 6, 4, 1], dtype=np.float64) / 16.0
     
-    # apply separable convolution
-    # first convolve horizontally
     temp = cv2.filter2D(image, -1, kernel_1d.reshape(1, -1))
-    # then convolve vertically  
     blurred = cv2.filter2D(temp, -1, kernel_1d.reshape(-1, 1))
     
-    # downsample by factor of 2 (take every other pixel)
-    h, w = blurred.shape
     reduced = blurred[::2, ::2]
     
     return reduced
@@ -271,24 +261,18 @@ def create_combined_img(img_list):
     if not img_list:
         return np.array([])
     
-    # get dimensions
     heights = [img.shape[0] for img in img_list]
     widths = [img.shape[1] for img in img_list]
     
-    # total width is sum of all widths
     total_width = sum(widths)
     max_height = max(heights)
     
-    # create combined image
     combined = np.zeros((max_height, total_width), dtype=np.float64)
     
-    # place images side by side with normalization
     x_offset = 0
     for img in img_list:
         h, w = img.shape
-        # normalize each image individually
         normalized = normalize_and_scale(img)
-        # place image at top-left of its section
         combined[0:h, x_offset:x_offset+w] = normalized
         x_offset += w
     
@@ -484,5 +468,40 @@ def classify_video(images):
     Returns:
         int:  Class of video
     """
-
-    raise NotImplementedError
+    if len(images) < 2:
+        return 2
+    
+    flows = []
+    for i in range(len(images) - 1):
+        u, v = optic_flow_lk(images[i], images[i + 1], 15, 'uniform', 1)
+        flows.append((u, v))
+    
+    mags = []
+    for u, v in flows:
+        mag = np.sqrt(u**2 + v**2)
+        mags.append(np.mean(mag))
+    
+    avg_mag = np.mean(mags)
+    mag_var = np.var(mags)
+    
+    # check for rhythmic patterns
+    changes = np.diff(mags)
+    rhythm = np.std(changes)
+    
+    # running usually has high consistent motion
+    if avg_mag > 0.8 and mag_var < 0.3:
+        return 1
+    # walking has moderate motion with rhythm
+    elif 0.3 < avg_mag < 0.8 and rhythm > 0.2:
+        return 2
+    # clapping has high variance and rhythm
+    elif mag_var > 0.5 and rhythm > 0.3:
+        return 3
+    else:
+        # fallback
+        if avg_mag > 0.6:
+            return 1
+        elif avg_mag > 0.2:
+            return 2
+        else:
+            return 3

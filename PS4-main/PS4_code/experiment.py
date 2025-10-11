@@ -475,8 +475,93 @@ def part_6():
 
     Place all your work in this file and this section.
     """
-
-    raise NotImplementedError
+    import cv2
+    import os
+    
+    # load and classify videos
+    video_dir = os.path.join(input_dir, 'videos')
+    video_files = [
+        'person01_running_d2_uncomp.avi',
+        'person04_walking_d4_uncomp.avi', 
+        'person06_walking_d1_uncomp.avi',
+        'person08_running_d4_uncomp.avi',
+        'person10_handclapping_d4_uncomp.avi',
+        'person14_handclapping_d3_uncomp.avi'
+    ]
+    
+    expected_labels = [1, 2, 2, 1, 3, 3]  # running, walking, walking, running, clapping, clapping
+    
+    results = []
+    flow_visualizations = []
+    
+    for i, video_file in enumerate(video_files):
+        video_path = os.path.join(video_dir, video_file)
+        cap = cv2.VideoCapture(video_path)
+        
+        frames = []
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            # convert to grayscale and normalize
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            normalized = gray.astype(np.float64) / 255.0
+            frames.append(normalized)
+        
+        cap.release()
+        
+        # classify video
+        predicted = ps4.classify_video(frames)
+        expected = expected_labels[i]
+        
+        results.append({
+            'video': video_file,
+            'predicted': predicted,
+            'expected': expected,
+            'correct': predicted == expected
+        })
+        
+        # create flow visualization for first few frames
+        if len(frames) >= 2:
+            u, v = ps4.optic_flow_lk(frames[0], frames[1], 15, 'uniform', 1)
+            flow_viz = quiver(u, v, scale=2, stride=8)
+            flow_visualizations.append(flow_viz)
+    
+    # create results visualization
+    correct_count = sum(1 for r in results if r['correct'])
+    total_count = len(results)
+    accuracy = correct_count / total_count
+    
+    # create first results image
+    results_img = np.zeros((400, 600), dtype=np.uint8)
+    cv2.putText(results_img, f'Classification Results', (20, 40), 
+                cv2.FONT_HERSHEY_SIMPLEX, 1, 255, 2)
+    cv2.putText(results_img, f'Accuracy: {accuracy:.2f} ({correct_count}/{total_count})', 
+                (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, 255, 2)
+    
+    y_offset = 120
+    for result in results:
+        status = 'CORRECT' if result['correct'] else 'WRONG'
+        color = 255 if result['correct'] else 128
+        text = f'{result["video"][:20]}... Pred:{result["predicted"]} Exp:{result["expected"]} {status}'
+        cv2.putText(results_img, text, (20, y_offset), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+        y_offset += 30
+    
+    cv2.imwrite(os.path.join(output_dir, "ps4-6-a-1.jpg"), results_img)
+    
+    # create flow visualization image
+    if flow_visualizations:
+        # combine first 3 flow visualizations
+        combined_flows = np.zeros((300, 900), dtype=np.uint8)
+        for i, flow_viz in enumerate(flow_visualizations[:3]):
+            # resize flow viz to 300x300 and convert to grayscale if needed
+            resized = cv2.resize(flow_viz, (300, 300))
+            if len(resized.shape) == 3:
+                resized = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+            combined_flows[:, i*300:(i+1)*300] = resized
+        
+        cv2.imwrite(os.path.join(output_dir, "ps4-6-a-2.jpg"), combined_flows)
 
 
 if __name__ == '__main__':
