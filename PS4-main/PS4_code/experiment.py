@@ -84,25 +84,25 @@ def part_1a():
     shift_r5_u5 = cv2.imread(
         os.path.join(input_dir, 'TestSeq', 'ShiftR5U5.png'), 0) / 255.
 
-    # Optional: smooth the images if LK doesn't work well on raw images
-    k_size = 0  # TODO: Select a kernel size
-    k_type = ""  # TODO: Select a kernel type
-    sigma = 0  # TODO: Select a sigma value if you are using a gaussian kernel
+    # smooth images if needed
+    k_size = 15
+    k_type = "uniform"
+    sigma = 1
     u, v = ps4.optic_flow_lk(shift_0, shift_r2, k_size, k_type, sigma)
 
-    # Flow image
+    # flow image
     u_v = quiver(u, v, scale=3, stride=10)
     cv2.imwrite(os.path.join(output_dir, "ps4-1-a-1.png"), u_v)
 
     # Now let's try with ShiftR5U5. You may want to try smoothing the
     # input images first.
 
-    k_size = 0  # TODO: Select a kernel size
-    k_type = ""  # TODO: Select a kernel type
-    sigma = 0  # TODO: Select a sigma value if you are using a gaussian kernel
+    k_size = 15
+    k_type = "uniform"
+    sigma = 1
     u, v = ps4.optic_flow_lk(shift_0, shift_r5_u5, k_size, k_type, sigma)
 
-    # Flow image
+    # flow image
     u_v = quiver(u, v, scale=3, stride=10)
     cv2.imwrite(os.path.join(output_dir, "ps4-1-a-2.png"), u_v)
 
@@ -171,9 +171,9 @@ def part_3a_1():
     yos_img_02_g_pyr = ps4.gaussian_pyramid(yos_img_02, levels)
 
     level_id = 0  # TODO: Select the level number (or id) you wish to use
-    k_size = 0  # TODO: Select a kernel size
-    k_type = ""  # TODO: Select a kernel type
-    sigma = 0  # TODO: Select a sigma value if you are using a gaussian kernel
+    k_size = 15
+    k_type = "uniform"
+    sigma = 1
     u, v = ps4.optic_flow_lk(yos_img_01_g_pyr[level_id],
                              yos_img_02_g_pyr[level_id], k_size, k_type, sigma)
 
@@ -199,9 +199,9 @@ def part_3a_2():
     yos_img_03_g_pyr = ps4.gaussian_pyramid(yos_img_03, levels)
 
     level_id = 1  # TODO: Select the level number (or id) you wish to use
-    k_size = 0  # TODO: Select a kernel size
-    k_type = ""  # TODO: Select a kernel type
-    sigma = 0  # TODO: Select a sigma value if you are using a gaussian kernel
+    k_size = 15
+    k_type = "uniform"
+    sigma = 1
     u, v = ps4.optic_flow_lk(yos_img_02_g_pyr[level_id],
                              yos_img_03_g_pyr[level_id], k_size, k_type, sigma)
 
@@ -227,9 +227,9 @@ def part_4a():
                            0) / 255.
 
     levels = 1  # TODO: Define the number of levels
-    k_size = 0  # TODO: Select a kernel size
-    k_type = ""  # TODO: Select a kernel type
-    sigma = 0  # TODO: Select a sigma value if you are using a gaussian kernel
+    k_size = 15
+    k_type = "uniform"
+    sigma = 1
     interpolation = cv2.INTER_CUBIC  # You may try different values
     border_mode = cv2.BORDER_REFLECT101  # You may try different values
 
@@ -260,9 +260,9 @@ def part_4b():
                               0) / 255.
 
     levels = 1  # TODO: Define the number of levels
-    k_size = 0  # TODO: Select a kernel size
-    k_type = ""  # TODO: Select a kernel type
-    sigma = 0  # TODO: Select a sigma value if you are using a gaussian kernel
+    k_size = 15
+    k_type = "uniform"
+    sigma = 1
     interpolation = cv2.INTER_CUBIC  # You may try different values
     border_mode = cv2.BORDER_REFLECT101  # You may try different values
 

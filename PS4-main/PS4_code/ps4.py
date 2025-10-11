@@ -72,8 +72,9 @@ def gradient_x(image):
         numpy.array: image gradient in the X direction. Output
                      from cv2.Sobel.
     """
-
-    raise NotImplementedError
+    # sobel x gradient with 1/8 scale and ksize 3
+    grad_x = cv2.Sobel(image, cv2.CV_64F, dx=1, dy=0, ksize=3, scale=1/8)
+    return grad_x
 
 
 def gradient_y(image):
@@ -90,8 +91,9 @@ def gradient_y(image):
         numpy.array: image gradient in the Y direction.
                      Output from cv2.Sobel.
     """
-
-    raise NotImplementedError
+    # sobel y gradient with 1/8 scale and ksize 3
+    grad_y = cv2.Sobel(image, cv2.CV_64F, dx=0, dy=1, ksize=3, scale=1/8)
+    return grad_y
 
 
 def optic_flow_lk(img_a, img_b, k_size, k_type, sigma=1):
@@ -132,8 +134,47 @@ def optic_flow_lk(img_a, img_b, k_size, k_type, sigma=1):
             V (numpy.array): raw displacement (in pixels) along
                              Y-axis, same size and type as U.
     """
-
-    raise NotImplementedError
+    # get gradients
+    I_x = gradient_x(img_a)
+    I_y = gradient_y(img_a)
+    I_t = img_b - img_a
+    
+    # make kernel
+    if k_type == 'uniform':
+        kernel = np.ones((k_size, k_size), dtype=np.float64) / (k_size * k_size)
+    elif k_type == 'gaussian':
+        kernel_1d = cv2.getGaussianKernel(k_size, sigma)
+        kernel = kernel_1d @ kernel_1d.T
+    else:
+        raise ValueError(f"Unknown kernel type: {k_type}")
+    
+    # compute products for equations
+    I_xx = cv2.filter2D(I_x * I_x, -1, kernel)
+    I_yy = cv2.filter2D(I_y * I_y, -1, kernel)
+    I_xy = cv2.filter2D(I_x * I_y, -1, kernel)
+    I_xt = cv2.filter2D(I_x * I_t, -1, kernel)
+    I_yt = cv2.filter2D(I_y * I_t, -1, kernel)
+    
+    # solve for each pixel
+    U = np.zeros_like(img_a)
+    V = np.zeros_like(img_a)
+    
+    for y in range(img_a.shape[0]):
+        for x in range(img_a.shape[1]):
+            A = np.array([[I_xx[y, x], I_xy[y, x]], 
+                         [I_xy[y, x], I_yy[y, x]]])
+            b = -np.array([I_xt[y, x], I_yt[y, x]])
+            
+            det = A[0, 0] * A[1, 1] - A[0, 1] * A[1, 0]
+            if abs(det) > 1e-10:
+                flow = np.linalg.solve(A, b)
+                U[y, x] = flow[0]
+                V[y, x] = flow[1]
+            else:
+                U[y, x] = 0
+                V[y, x] = 0
+    
+    return U, V
 
 
 def reduce_image(image):
