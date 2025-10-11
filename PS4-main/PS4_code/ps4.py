@@ -438,8 +438,44 @@ def hierarchical_lk(img_a, img_b, levels, k_size, k_type, sigma, interpolation,
             V (numpy.array): raw displacement (in pixels) along Y-axis,
                              same size and type as U.
     """
-
-    raise NotImplementedError
+    # build gaussian pyramids for both images
+    pyr_a = gaussian_pyramid(img_a, levels)
+    pyr_b = gaussian_pyramid(img_b, levels)
+    
+    # start with zero flow at the coarsest level
+    u = np.zeros_like(pyr_a[levels - 1])
+    v = np.zeros_like(pyr_a[levels - 1])
+    
+    # iterate from coarsest to finest level
+    for level in range(levels - 1, -1, -1):
+        # get images at current level
+        img_a_level = pyr_a[level]
+        img_b_level = pyr_b[level]
+        
+        # if not the coarsest level, scale up flow from previous level
+        if level < levels - 1:
+            # expand flow by factor of 2 and adjust for current level size
+            u = expand_image(u) * 2
+            v = expand_image(v) * 2
+            
+            # crop to match current level size
+            h, w = img_a_level.shape
+            if u.shape[0] > h or u.shape[1] > w:
+                u = u[:h, :w]
+            if v.shape[0] > h or v.shape[1] > w:
+                v = v[:h, :w]
+        
+        # warp image b using current flow estimate
+        img_b_warped = warp(img_b_level, u, v, interpolation, border_mode)
+        
+        # compute optical flow between warped image and reference
+        du, dv = optic_flow_lk(img_a_level, img_b_warped, k_size, k_type, sigma)
+        
+        # update flow estimate
+        u = u + du
+        v = v + dv
+    
+    return u, v
 
 def classify_video(images):
     """Classifies a set of frames as either
