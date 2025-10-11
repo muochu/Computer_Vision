@@ -392,8 +392,23 @@ def warp(image, U, V, interpolation, border_mode):
         numpy.array: warped image, such that
                      warped[y, x] = image[y + V[y, x], x + U[y, x]]
     """
-
-    raise NotImplementedError
+    h, w = image.shape
+    
+    # create coordinate grids
+    y_coords, x_coords = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
+    
+    # add displacement to coordinates
+    map_x = x_coords + U
+    map_y = y_coords + V
+    
+    # convert to float32 for cv2.remap
+    map_x = map_x.astype(np.float32)
+    map_y = map_y.astype(np.float32)
+    
+    # warp image using cv2.remap
+    warped = cv2.remap(image, map_x, map_y, interpolation, borderMode=border_mode)
+    
+    return warped
 
 
 def hierarchical_lk(img_a, img_b, levels, k_size, k_type, sigma, interpolation,

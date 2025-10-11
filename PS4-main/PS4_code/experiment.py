@@ -71,8 +71,30 @@ def scale_u_and_v(u, v, level, pyr):
                              pyr[0].shape
     """
 
-    # TODO: Your code here
-    raise NotImplementedError
+    # start from the current level and expand up to level 0
+    current_u = u.copy()
+    current_v = v.copy()
+    
+    # expand from level down to level 0
+    for current_level in range(level, 0, -1):
+        # expand both U and V arrays
+        current_u = ps4.expand_image(current_u)
+        current_v = ps4.expand_image(current_v)
+        
+        # multiply by 2 to scale vector values
+        current_u = current_u * 2
+        current_v = current_v * 2
+        
+        # adjust to match current level shape
+        target_h, target_w = pyr[current_level - 1].shape
+        current_h, current_w = current_u.shape
+        
+        # crop if necessary to match target shape
+        if current_h > target_h or current_w > target_w:
+            current_u = current_u[:target_h, :target_w]
+            current_v = current_v[:target_h, :target_w]
+    
+    return current_u, current_v
 
 
 def part_1a():
@@ -216,7 +238,7 @@ def part_3a_2():
     yos_img_02_g_pyr = ps4.gaussian_pyramid(yos_img_02, levels)
     yos_img_03_g_pyr = ps4.gaussian_pyramid(yos_img_03, levels)
 
-    level_id = 1  # TODO: Select the level number (or id) you wish to use
+    level_id = 0  # TODO: Select the level number (or id) you wish to use
     k_size = 15
     k_type = "uniform"
     sigma = 1
