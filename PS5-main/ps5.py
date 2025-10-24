@@ -145,11 +145,23 @@ class ParticleFilter(object):
 
         self.template = template
         self.frame = frame
-        self.particles = None  # Initialize your particles array. Read the docstring.
-        self.weights = None  # Initialize your weights array. Read the docstring.
-        # Initialize any other components you may need when designing your filter.
-
-        raise NotImplementedError
+        
+        # Initialize particles around the template location
+        template_x = self.template_rect['x'] + self.template_rect['w'] // 2
+        template_y = self.template_rect['y'] + self.template_rect['h'] // 2
+        
+        # Create particles with some initial spread around the template
+        self.particles = np.zeros((self.num_particles, 2))
+        self.particles[:, 0] = template_x + np.random.normal(0, 20, self.num_particles)
+        self.particles[:, 1] = template_y + np.random.normal(0, 20, self.num_particles)
+        
+        # Make sure particles stay within image bounds
+        h, w = frame.shape[:2]
+        self.particles[:, 0] = np.clip(self.particles[:, 0], 0, w-1)
+        self.particles[:, 1] = np.clip(self.particles[:, 1], 0, h-1)
+        
+        # Initialize weights uniformly
+        self.weights = np.ones(self.num_particles) / self.num_particles
 
     def get_particles(self):
         """Returns the current particles state.
@@ -172,47 +184,99 @@ class ParticleFilter(object):
         return self.weights
 
     def get_error_metric(self, template, frame_cutout):
-        """Returns the error metric used based on the similarity measure.
-
-        Returns:
-            float: similarity value.
-        """
-        return NotImplementedError
+        """Calculate MSE between template and frame cutout"""
+        # Make sure both images are the same size
+        if template.shape != frame_cutout.shape:
+            return float('inf')
+        
+        # Convert to grayscale if needed
+        if len(template.shape) == 3:
+            template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+        else:
+            template_gray = template
+            
+        if len(frame_cutout.shape) == 3:
+            frame_gray = cv2.cvtColor(frame_cutout, cv2.COLOR_BGR2GRAY)
+        else:
+            frame_gray = frame_cutout
+        
+        # Calculate MSE
+        mse = np.mean((template_gray.astype(np.float32) - frame_gray.astype(np.float32)) ** 2)
+        
+        # Convert to similarity using Gaussian
+        similarity = np.exp(-mse / (2 * self.sigma_exp ** 2))
+        
+        return similarity
 
     def resample_particles(self):
-        """Returns a new set of particles
-
-        This method does not alter self.particles.
-
-        Use self.num_particles and self.weights to return an array of
-        resampled particles based on their weights.
-
-        See np.random.choice or np.random.multinomial.
-
-        Returns:
-            numpy.array: particles data structure.
-        """
-        return NotImplementedError
+        """Resample particles based on their weights"""
+        # Normalize weights to make sure they sum to 1
+        weights_normalized = self.weights / np.sum(self.weights)
+        
+        # Use multinomial sampling to select particles based on weights
+        indices = np.random.multinomial(self.num_particles, weights_normalized)
+        
+        # Create new particle array
+        new_particles = np.zeros_like(self.particles)
+        particle_idx = 0
+        
+        for i, count in enumerate(indices):
+            for _ in range(count):
+                if particle_idx < self.num_particles:
+                    new_particles[particle_idx] = self.particles[i]
+                    particle_idx += 1
+        
+        return new_particles
 
     def process(self, frame):
-        """Processes a video frame (image) and updates the filter's state.
-
-        Implement the particle filter in this method returning None
-        (do not include a return call). This function should update the
-        particles and weights data structures.
-
-        Make sure your particle filter is able to cover the entire area of the
-        image. This means you should address particles that are close to the
-        image borders.
-
-        Args:
-            frame (numpy.array): color BGR uint8 image of current video frame,
-                                 values in [0, 255].
-
-        Returns:
-            None.
-        """
-        raise NotImplementedError
+        """Process a new frame and update particle filter state"""
+        h, w = frame.shape[:2]
+        template_h, template_w = self.template.shape[:2]
+        
+        # Add noise to particles (dynamics step)
+        noise_x = np.random.normal(0, self.sigma_dyn, self.num_particles)
+        noise_y = np.random.normal(0, self.sigma_dyn, self.num_particles)
+        
+        self.particles[:, 0] += noise_x
+        self.particles[:, 1] += noise_y
+        
+        # Keep particles within image bounds
+        self.particles[:, 0] = np.clip(self.particles[:, 0], template_w//2, w - template_w//2)
+        self.particles[:, 1] = np.clip(self.particles[:, 1], template_h//2, h - template_h//2)
+        
+        # Calculate weights for each particle
+        for i in range(self.num_particles):
+            x, y = int(self.particles[i, 0]), int(self.particles[i, 1])
+            
+            # Extract patch from frame
+            x1 = max(0, x - template_w//2)
+            y1 = max(0, y - template_h//2)
+            x2 = min(w, x + template_w//2)
+            y2 = min(h, y + template_h//2)
+            
+            # Handle edge cases where patch goes outside image
+            if x2 - x1 != template_w or y2 - y1 != template_h:
+                self.weights[i] = 0.0
+                continue
+                
+            frame_patch = frame[y1:y2, x1:x2]
+            
+            # Calculate similarity
+            similarity = self.get_error_metric(self.template, frame_patch)
+            self.weights[i] = similarity
+        
+        # Normalize weights
+        if np.sum(self.weights) > 0:
+            self.weights = self.weights / np.sum(self.weights)
+        else:
+            # If all weights are zero, reset to uniform
+            self.weights = np.ones(self.num_particles) / self.num_particles
+        
+        # Resample particles
+        self.particles = self.resample_particles()
+        
+        # Reset weights after resampling
+        self.weights = np.ones(self.num_particles) / self.num_particles
 
     def render(self, frame_in):
         """Visualizes current particle filter state.
@@ -252,8 +316,29 @@ class ParticleFilter(object):
             x_weighted_mean += self.particles[i, 0] * self.weights[i]
             y_weighted_mean += self.particles[i, 1] * self.weights[i]
 
-        # Complete the rest of the code as instructed.
-        raise NotImplementedError
+        # Draw particles as colored dots
+        for i in range(self.num_particles):
+            x, y = int(self.particles[i, 0]), int(self.particles[i, 1])
+            cv2.circle(frame_in, (x, y), 2, (0, 255, 0), -1)
+        
+        # Draw tracking rectangle around weighted mean
+        template_h, template_w = self.template.shape[:2]
+        x1 = int(x_weighted_mean - template_w//2)
+        y1 = int(y_weighted_mean - template_h//2)
+        x2 = int(x_weighted_mean + template_w//2)
+        y2 = int(y_weighted_mean + template_h//2)
+        cv2.rectangle(frame_in, (x1, y1), (x2, y2), (255, 0, 0), 2)
+        
+        # Calculate weighted standard deviation for uncertainty circle
+        distances = []
+        for i in range(self.num_particles):
+            dist = np.sqrt((self.particles[i, 0] - x_weighted_mean)**2 + 
+                          (self.particles[i, 1] - y_weighted_mean)**2)
+            distances.append(dist * self.weights[i])
+        
+        uncertainty_radius = int(np.sum(distances))
+        cv2.circle(frame_in, (int(x_weighted_mean), int(y_weighted_mean)), 
+                  uncertainty_radius, (0, 0, 255), 1)
 
 
 class AppearanceModelPF(ParticleFilter):
@@ -348,9 +433,9 @@ def part_1c(obj_class, template_loc, save_frames, input_folder):
 
 
 def part_2a(obj_class, template_loc, save_frames, input_folder):
-    num_particles = 0  # Define the number of particles
-    sigma_mse = 0  # Define the value of sigma for the measurement exponential equation
-    sigma_dyn = 0  # Define the value of sigma for the particles movement (dynamics)
+    num_particles = 100  # Number of particles for tracking
+    sigma_mse = 10.0  # Sigma for measurement similarity
+    sigma_dyn = 8.0  # Sigma for particle dynamics (movement noise)
 
     out = run_particle_filter(
         obj_class,  # particle filter model class
@@ -365,9 +450,9 @@ def part_2a(obj_class, template_loc, save_frames, input_folder):
 
 
 def part_2b(obj_class, template_loc, save_frames, input_folder):
-    num_particles = 0  # Define the number of particles
-    sigma_mse = 0  # Define the value of sigma for the measurement exponential equation
-    sigma_dyn = 0  # Define the value of sigma for the particles movement (dynamics)
+    num_particles = 200  # More particles for noisy video
+    sigma_mse = 15.0  # Higher sigma for noisy measurements
+    sigma_dyn = 12.0  # Higher dynamics for noisy video
 
     out = run_particle_filter(
         obj_class,  # particle filter model class
