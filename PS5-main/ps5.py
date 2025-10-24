@@ -24,14 +24,64 @@ class KalmanFilter(object):
             Q (numpy.array): Process noise array.
             R (numpy.array): Measurement noise array.
         """
-        self.state = np.array([init_x, init_y, 0., 0.])  # state
-        raise NotImplementedError
+        # Set up the state vector with position and velocity
+        self.state = np.array([init_x, init_y, 0., 0.], dtype=np.float64)
+        
+        # Store the noise matrices
+        self.Q = Q
+        self.R = R
+        
+        # Start with high uncertainty in our state estimate
+        self.P = np.eye(4) * 100.0
+        
+        # This matrix describes how the state evolves over time
+        # For constant velocity model: position += velocity * dt
+        dt = 1.0
+        self.D = np.array([
+            [1, 0, dt, 0],
+            [0, 1, 0, dt],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1]
+        ], dtype=np.float64)
+        
+        # This matrix tells us what we can actually measure
+        # We only get x,y positions from our sensor, not velocities
+        self.M = np.array([
+            [1, 0, 0, 0],
+            [0, 1, 0, 0]
+        ], dtype=np.float64)
 
     def predict(self):
-        raise NotImplementedError
+        """Predict the next state based on our motion model"""
+        # Update state using our dynamics model
+        self.state = self.D @ self.state
+        
+        # Update our uncertainty about the state
+        self.P = self.D @ self.P @ self.D.T + self.Q
 
     def correct(self, meas_x, meas_y):
-        raise NotImplementedError
+        """Update our estimate using the new measurement"""
+        # Put the measurement into a vector
+        z = np.array([meas_x, meas_y], dtype=np.float64)
+        
+        # What measurement do we expect based on our current state?
+        predicted_measurement = self.M @ self.state
+        
+        # How different is the actual measurement from what we expected?
+        innovation = z - predicted_measurement
+        
+        # Calculate how much we trust this measurement
+        S = self.M @ self.P @ self.M.T + self.R
+        
+        # Compute the Kalman gain - this tells us how much to trust the measurement
+        K = self.P @ self.M.T @ np.linalg.inv(S)
+        
+        # Update our state estimate
+        self.state = self.state + K @ innovation
+        
+        # Update our uncertainty
+        I = np.eye(4)
+        self.P = (I - K @ self.M) @ self.P
 
     def process(self, measurement_x, measurement_y):
 
