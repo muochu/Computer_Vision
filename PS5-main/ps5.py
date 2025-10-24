@@ -356,27 +356,34 @@ class AppearanceModelPF(ParticleFilter):
 
         super(AppearanceModelPF, self).__init__(frame, template, **kwargs)  # call base class constructor
 
-        self.alpha = kwargs.get('alpha')  # required by the autograder
-        # If you want to add more parameters, make sure you set a default value so that
-        # your test doesn't fail the autograder because of an unknown or None value.
-        #
-        # The way to do it is:
-        # self.some_parameter_name = kwargs.get('parameter_name', default_value)
+        self.alpha = kwargs.get('alpha', 0.05)  # IIR filter parameter for template updating
 
     def process(self, frame):
-        """Processes a video frame (image) and updates the filter's state.
-
-        This process is also inherited from ParticleFilter. Depending on your
-        implementation, you may comment out this function and use helper
-        methods that implement the "Appearance Model" procedure.
-
-        Args:
-            frame (numpy.array): color BGR uint8 image of current video frame, values in [0, 255].
-
-        Returns:
-            None.
-        """
-        raise NotImplementedError
+        """Process frame and update template using IIR filter"""
+        # First do the normal particle filter processing
+        super(AppearanceModelPF, self).process(frame)
+        
+        # Now update the template using the best estimate
+        # Get the weighted mean position
+        x_mean = np.sum(self.particles[:, 0] * self.weights)
+        y_mean = np.sum(self.particles[:, 1] * self.weights)
+        
+        # Extract the best patch from current frame
+        template_h, template_w = self.template.shape[:2]
+        h, w = frame.shape[:2]
+        
+        x1 = max(0, int(x_mean - template_w//2))
+        y1 = max(0, int(y_mean - template_h//2))
+        x2 = min(w, int(x_mean + template_w//2))
+        y2 = min(h, int(y_mean + template_h//2))
+        
+        # Make sure we have the right size patch
+        if x2 - x1 == template_w and y2 - y1 == template_h:
+            best_patch = frame[y1:y2, x1:x2]
+            
+            # Update template using IIR filter: Template(t) = α * Best(t) + (1-α) * Template(t-1)
+            self.template = (self.alpha * best_patch.astype(np.float32) + 
+                           (1 - self.alpha) * self.template.astype(np.float32)).astype(np.uint8)
 
 
 class MDParticleFilter(AppearanceModelPF):
@@ -391,27 +398,128 @@ class MDParticleFilter(AppearanceModelPF):
         """
 
         super(MDParticleFilter, self).__init__(frame, template, **kwargs)  # call base class constructor
-        # If you want to add more parameters, make sure you set a default value so that
-        # your test doesn't fail the autograder because of an unknown or None value.
-        #
-        # The way to do it is:
-        # self.some_parameter_name = kwargs.get('parameter_name', default_value)
+        
+        # Override particles to include scale dimension [x, y, scale]
+        template_x = self.template_rect['x'] + self.template_rect['w'] // 2
+        template_y = self.template_rect['y'] + self.template_rect['h'] // 2
+        
+        # Initialize particles with position and scale
+        self.particles = np.zeros((self.num_particles, 3))  # [x, y, scale]
+        self.particles[:, 0] = template_x + np.random.normal(0, 20, self.num_particles)
+        self.particles[:, 1] = template_y + np.random.normal(0, 20, self.num_particles)
+        self.particles[:, 2] = 1.0 + np.random.normal(0, 0.1, self.num_particles)  # scale around 1.0
+        
+        # Keep particles within bounds
+        h, w = frame.shape[:2]
+        self.particles[:, 0] = np.clip(self.particles[:, 0], 0, w-1)
+        self.particles[:, 1] = np.clip(self.particles[:, 1], 0, h-1)
+        self.particles[:, 2] = np.clip(self.particles[:, 2], 0.5, 2.0)  # scale between 0.5 and 2.0
+    
+    def resample_particles(self):
+        """Resample particles for multi-dimensional state"""
+        # Normalize weights to make sure they sum to 1
+        weights_normalized = self.weights / np.sum(self.weights)
+        
+        # Use multinomial sampling to select particles based on weights
+        indices = np.random.multinomial(self.num_particles, weights_normalized)
+        
+        # Create new particle array
+        new_particles = np.zeros_like(self.particles)
+        particle_idx = 0
+        
+        for i, count in enumerate(indices):
+            for _ in range(count):
+                if particle_idx < self.num_particles:
+                    new_particles[particle_idx] = self.particles[i]
+                    particle_idx += 1
+        
+        return new_particles
 
     def process(self, frame):
-        """Processes a video frame (image) and updates the filter's state.
-
-        This process is also inherited from ParticleFilter. Depending on your
-        implementation, you may comment out this function and use helper
-        methods that implement the "More Dynamics" procedure.
-
-        Args:
-            frame (numpy.array): color BGR uint8 image of current video frame,
-                                 values in [0, 255].
-
-        Returns:
-            None.
-        """
-        raise NotImplementedError
+        """Process frame with multi-dimensional state including scale"""
+        h, w = frame.shape[:2]
+        template_h, template_w = self.template.shape[:2]
+        
+        # Add noise to particles (dynamics step) - now includes scale
+        noise_x = np.random.normal(0, self.sigma_dyn, self.num_particles)
+        noise_y = np.random.normal(0, self.sigma_dyn, self.num_particles)
+        noise_scale = np.random.normal(0, 0.05, self.num_particles)  # scale noise
+        
+        self.particles[:, 0] += noise_x
+        self.particles[:, 1] += noise_y
+        self.particles[:, 2] += noise_scale
+        
+        # Keep particles within bounds
+        self.particles[:, 0] = np.clip(self.particles[:, 0], 0, w-1)
+        self.particles[:, 1] = np.clip(self.particles[:, 1], 0, h-1)
+        self.particles[:, 2] = np.clip(self.particles[:, 2], 0.5, 2.0)
+        
+        # Calculate weights for each particle
+        for i in range(self.num_particles):
+            x, y, scale = self.particles[i, 0], self.particles[i, 1], self.particles[i, 2]
+            
+            # Resize template according to particle scale
+            new_h = int(template_h * scale)
+            new_w = int(template_w * scale)
+            
+            if new_h < 5 or new_w < 5 or new_h > h or new_w > w:
+                self.weights[i] = 0.0
+                continue
+                
+            # Resize template
+            resized_template = cv2.resize(self.template, (new_w, new_h))
+            
+            # Extract patch from frame
+            x1 = max(0, int(x - new_w//2))
+            y1 = max(0, int(y - new_h//2))
+            x2 = min(w, int(x + new_w//2))
+            y2 = min(h, int(y + new_h//2))
+            
+            if x2 - x1 != new_w or y2 - y1 != new_h:
+                self.weights[i] = 0.0
+                continue
+                
+            frame_patch = frame[y1:y2, x1:x2]
+            
+            # Calculate similarity
+            similarity = self.get_error_metric(resized_template, frame_patch)
+            self.weights[i] = similarity
+        
+        # Normalize weights
+        if np.sum(self.weights) > 0:
+            self.weights = self.weights / np.sum(self.weights)
+        else:
+            self.weights = np.ones(self.num_particles) / self.num_particles
+        
+        # Resample particles
+        self.particles = self.resample_particles()
+        
+        # Reset weights after resampling
+        self.weights = np.ones(self.num_particles) / self.num_particles
+        
+        # Update template using best estimate (inherited from AppearanceModelPF)
+        x_mean = np.sum(self.particles[:, 0] * self.weights)
+        y_mean = np.sum(self.particles[:, 1] * self.weights)
+        scale_mean = np.sum(self.particles[:, 2] * self.weights)
+        
+        # Extract best patch with current scale
+        new_h = int(template_h * scale_mean)
+        new_w = int(template_w * scale_mean)
+        
+        if new_h > 0 and new_w > 0 and new_h < h and new_w < w:
+            x1 = max(0, int(x_mean - new_w//2))
+            y1 = max(0, int(y_mean - new_h//2))
+            x2 = min(w, int(x_mean + new_w//2))
+            y2 = min(h, int(y_mean + new_h//2))
+            
+            if x2 - x1 == new_w and y2 - y1 == new_h:
+                best_patch = frame[y1:y2, x1:x2]
+                # Resize back to original template size
+                resized_patch = cv2.resize(best_patch, (template_w, template_h))
+                
+                # Update template using IIR filter
+                self.template = (self.alpha * resized_patch.astype(np.float32) + 
+                               (1 - self.alpha) * self.template.astype(np.float32)).astype(np.uint8)
 
 
 def part_1b(obj_class, template_loc, save_frames, input_folder):
@@ -467,10 +575,10 @@ def part_2b(obj_class, template_loc, save_frames, input_folder):
 
 
 def part_3(obj_class, template_rect, save_frames, input_folder):
-    num_particles = 0  # Define the number of particles
-    sigma_mse = 0  # Define the value of sigma for the measurement exponential equation
-    sigma_dyn = 0  # Define the value of sigma for the particles movement (dynamics)
-    alpha = 0  # Set a value for alpha
+    num_particles = 300  # More particles for appearance changes
+    sigma_mse = 12.0  # Sigma for measurement similarity
+    sigma_dyn = 10.0  # Sigma for particle dynamics
+    alpha = 0.05  # IIR filter parameter for template updating
 
     out = run_particle_filter(
         obj_class,  # particle filter model class
@@ -487,9 +595,9 @@ def part_3(obj_class, template_rect, save_frames, input_folder):
 
 
 def part_4(obj_class, template_rect, save_frames, input_folder):
-    num_particles = 0  # Define the number of particles
-    sigma_md = 0  # Define the value of sigma for the measurement exponential equation
-    sigma_dyn = 0  # Define the value of sigma for the particles movement (dynamics)
+    num_particles = 500  # Many particles for complex occlusions
+    sigma_md = 15.0  # Higher sigma for multi-dimensional tracking
+    sigma_dyn = 15.0  # Higher dynamics for occlusions and scale changes
 
     out = run_particle_filter(
         obj_class,
