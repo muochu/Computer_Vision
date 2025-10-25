@@ -12,7 +12,7 @@ NOISE_2 = {'x': 7.5, 'y': 7.5}
 
 # Helper code
 def run_particle_filter(filter_class, imgs_dir, template_rect,
-                        save_frames={}, **kwargs):
+                        save_frames={}, debug_log_path=None, seed=None, **kwargs):
     """Runs a particle filter on a given video and template.
 
     Create an object of type pf_class, passing in initial video frame,
@@ -45,6 +45,23 @@ def run_particle_filter(filter_class, imgs_dir, template_rect,
     pf = None
     frame_num = 0
 
+    # Optional deterministic runs
+    if seed is not None:
+        try:
+            import numpy as _np
+            _np.random.seed(int(seed))
+        except Exception:
+            pass
+
+    # Prepare debug logging
+    log_f = None
+    if debug_log_path is not None:
+        try:
+            log_f = open(debug_log_path, 'w')
+            log_f.write('frame,x_mean,y_mean,max_weight,neff,updated_template\n')
+        except Exception:
+            log_f = None
+
     # Loop over video (till last frame or Ctrl+C is presssed)
     for img in imgs_list:
 
@@ -65,7 +82,21 @@ def run_particle_filter(filter_class, imgs_dir, template_rect,
         # Process frame
         pf.process(frame)
 
-        if True:  # For debugging, it displays every frame
+        # Debug log
+        if log_f is not None:
+            try:
+                particles = pf.get_particles()
+                weights = pf.get_weights()
+                x_mean = float((particles[:, 0] * weights).sum())
+                y_mean = float((particles[:, 1] * weights).sum())
+                max_w = float(getattr(pf, 'debug_max_weight', float('nan')))
+                neff = float(getattr(pf, 'debug_neff', float('nan')))
+                updated = int(getattr(pf, 'debug_updated_template', 0))
+                log_f.write(f"{frame_num},{x_mean},{y_mean},{max_w},{neff},{updated}\n")
+            except Exception:
+                pass
+
+        if False:  # For debugging, set True to display every frame
             out_frame = frame.copy()
             pf.render(out_frame)
             cv2.imshow('Tracking', out_frame)
@@ -81,6 +112,11 @@ def run_particle_filter(filter_class, imgs_dir, template_rect,
         frame_num += 1
         if frame_num % 20 == 0:
             print('Working on frame {}'.format(frame_num))
+    if log_f is not None:
+        try:
+            log_f.close()
+        except Exception:
+            pass
     return 0
 
 
