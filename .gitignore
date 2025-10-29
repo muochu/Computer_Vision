@@ -1,0 +1,28 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Byte-compiled / optimized / DLL files
+*.so
+
+# MacOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# Project outputs
+PS5-main/output/
+PS5-main/input_images/
+
+# Notebooks and checkpoints
+.ipynb_checkpoints/
+
+# Logs
+*.log
+
+# Temporary files
+/tmp/

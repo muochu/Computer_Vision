@@ -115,7 +115,7 @@ def part_4():
     # Define process and measurement arrays if you want to use other than the
     # default.
     ps5.part_4(
-        ps5.MDParticleFilter,  # particle filter model class
+        ps5.MDParticleFilter,  # particle filter model class - required per instructions
         template_rect,
         save_frames,
         os.path.join(input_dir, "pedestrians"))
@@ -149,58 +149,119 @@ def part_5():
     # We'll track 3 people in the TUD-Campus sequence
     input_folder = os.path.join(input_dir, "TUD-Campus")
     
-    # Check if input folder exists
-    if not os.path.exists(input_folder):
-        print(f"Input folder {input_folder} not found. Creating placeholder implementation.")
-        # Create placeholder images
-        for frame_num, output_path in save_frames.items():
-            # Create a simple placeholder image
-            placeholder = np.zeros((300, 400, 3), dtype=np.uint8)
-            cv2.putText(placeholder, f"Part 5 - Frame {frame_num}", (50, 150), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-            cv2.putText(placeholder, "Multiple Target Tracking", (50, 200), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-            cv2.imwrite(output_path, placeholder)
-        return
+    if not os.path.isdir(input_folder):
+        raise FileNotFoundError(f"Expected dataset folder at {input_folder}")
     
-    # Initialize multiple Kalman filters for different targets
-    # Target 1: Person on the left
-    kf1 = ps5.KalmanFilter(100, 200)
-    # Target 2: Person in the center  
-    kf2 = ps5.KalmanFilter(200, 180)
-    # Target 3: Person on the right
-    kf3 = ps5.KalmanFilter(300, 220)
+    # Use ParticleFilter with optimized positions and balanced dynamics
+    # All 3 boxes perfectly positioned on distinct people
+    targets = [
+        {'x': 55, 'y': 238, 'w': 50, 'h': 100, 'color': (0, 255, 0)},  # Left person (brown jacket)
+        {'x': 185, 'y': 228, 'w': 55, 'h': 110, 'color': (255, 0, 0)},  # Center person (orange jacket)
+        {'x': 495, 'y': 218, 'w': 55, 'h': 115, 'color': (0, 0, 255)}  # Right person (brown jacket)
+    ]
     
     # Get list of images
     img_list = [f for f in os.listdir(input_folder) if f.endswith('.jpg')]
     img_list.sort()
     
+    # Read first frame
+    first_frame = cv2.imread(os.path.join(input_folder, img_list[0]))
+    
+    # Initialize 3 particle filters with balanced dynamics for tracking
+    pf_trackers = []
+    for t in targets:
+        template = first_frame[t['y']:t['y']+t['h'], t['x']:t['x']+t['w']]
+        pf = ps5.ParticleFilter(
+            first_frame, template,
+            num_particles=400,
+            sigma_exp=8.0,
+            sigma_dyn=4.5,
+            template_coords={'x': t['x'], 'y': t['y'], 'w': t['w'], 'h': t['h']}
+        )
+        pf_trackers.append({'pf': pf, 'w': t['w'], 'h': t['h'], 'color': t['color'], 'active': True})
+    
     # Process each frame
-    for frame_num, img_name in enumerate(img_list):
+    for img_name in img_list[1:]:
         frame = cv2.imread(os.path.join(input_folder, img_name))
         if frame is None:
             continue
-            
-        # Simple detection using template matching (placeholder)
-        # In a real implementation, you'd use HoG or other detectors
         
-        # Simulate tracking for each target
-        # Target 1: Moving left to right
-        x1, y1 = kf1.process(100 + frame_num * 2, 200 + np.sin(frame_num * 0.1) * 10)
-        # Target 2: Moving right to left  
-        x2, y2 = kf2.process(200 - frame_num * 1.5, 180 + np.cos(frame_num * 0.15) * 8)
-        # Target 3: Moving diagonally
-        x3, y3 = kf3.process(300 + frame_num * 0.5, 220 + frame_num * 0.3)
+        # Extract frame number from filename
+        frame_num = int(os.path.splitext(img_name)[0])
         
-        # Draw tracking boxes
-        cv2.rectangle(frame, (int(x1-20), int(y1-30)), (int(x1+20), int(y1+30)), (0, 255, 0), 2)
-        cv2.rectangle(frame, (int(x2-20), int(y2-30)), (int(x2+20), int(y2+30)), (255, 0, 0), 2)
-        cv2.rectangle(frame, (int(x3-20), int(y3-30)), (int(x3+20), int(y3+30)), (0, 0, 255), 2)
+        # Process each particle filter independently
+        for tracker in pf_trackers:
+            pf = tracker['pf']
+            w, h = tracker['w'], tracker['h']
+            color = tracker['color']
+
+            # Update tracker state
+            pf.process(frame)
+
+            max_weight = float(getattr(pf, 'debug_max_weight', 0.0))
+            if max_weight < 0.012:
+                tpl = pf.template
+                tpl_h, tpl_w = tpl.shape[:2]
+                if frame.shape[0] > tpl_h and frame.shape[1] > tpl_w:
+                    try:
+                        res = cv2.matchTemplate(frame, tpl, cv2.TM_SQDIFF_NORMED)
+                        min_val, _, min_loc, _ = cv2.minMaxLoc(res)
+                        if np.isfinite(min_val):
+                            match_x, match_y = min_loc
+                            cx = match_x + tpl_w / 2.0
+                            cy = match_y + tpl_h / 2.0
+                            pf.particles[:, 0] = cx + np.random.normal(0, 3.0, pf.num_particles)
+                            pf.particles[:, 1] = cy + np.random.normal(0, 3.0, pf.num_particles)
+                            pf.particles[:, 0] = np.clip(pf.particles[:, 0], tpl_w // 2, frame.shape[1] - tpl_w // 2)
+                            pf.particles[:, 1] = np.clip(pf.particles[:, 1], tpl_h // 2, frame.shape[0] - tpl_h // 2)
+                            pf.weights = np.ones(pf.num_particles) / pf.num_particles
+                            tracker['active'] = True
+                            max_weight = 0.5
+                        else:
+                            tracker['active'] = False
+                            continue
+                    except Exception:
+                        tracker['active'] = False
+                        continue
+                else:
+                    tracker['active'] = False
+                    continue
+            if max_weight > 0.02:
+                tracker['active'] = True
+
+            if not tracker['active']:
+                continue
+
+            # Draw particle cloud for visualization
+            particles = pf.get_particles()
+            for px, py in particles:
+                cv2.circle(frame, (int(round(px)), int(round(py))), 1, color, -1)
+
+            # Estimated position and confidence radius
+            cx, cy = pf.get_estimated_position()
+            weights = pf.get_weights()
+            diffs = particles - np.array([[cx, cy]])
+            distances = np.sqrt(np.sum(diffs ** 2, axis=1))
+            if weights.size and np.sum(weights) > 0:
+                radius = int(max(1.0, np.dot(distances, weights)))
+            else:
+                radius = max(w, h) // 4
+
+            # Draw tracking box and uncertainty circle
+            x1 = int(cx - w // 2)
+            y1 = int(cy - h // 2)
+            x2 = int(cx + w // 2)
+            y2 = int(cy + h // 2)
+
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+            cv2.circle(frame, (int(round(cx)), int(round(cy))), radius, color, 1)
+            cv2.circle(frame, (int(round(cx)), int(round(cy))), 3, color, -1)
         
         # Save specified frames
         if frame_num in save_frames:
-            cv2.imwrite(save_frames[frame_num], frame)
-            print(f"Saved frame {frame_num} to {save_frames[frame_num]}")
+            output_path = save_frames[frame_num]
+            cv2.imwrite(output_path, frame)
+            print(f"Saved frame {frame_num} to {output_path}")
     
     print("Part 5 completed - Multiple target tracking")
 
@@ -221,92 +282,48 @@ def part_6():
         186: os.path.join(output_dir, 'ps5-6-a-3.png')
     }
     
-    # Moving camera tracking using particle filter
     input_folder = os.path.join(input_dir, "follow")
-    
-    # Check if input folder exists
-    if not os.path.exists(input_folder):
-        print(f"Input folder {input_folder} not found. Creating placeholder implementation.")
-        # Create placeholder images
-        for frame_num, output_path in save_frames.items():
-            # Create a simple placeholder image
-            placeholder = np.zeros((300, 400, 3), dtype=np.uint8)
-            cv2.putText(placeholder, f"Part 6 - Frame {frame_num}", (50, 150), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-            cv2.putText(placeholder, "Moving Camera Tracking", (50, 200), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-            cv2.imwrite(output_path, placeholder)
-        return
-    
-    # Get list of images
-    img_list = [f for f in os.listdir(input_folder) if f.endswith('.jpg')]
-    img_list.sort()
-    
-    # Initialize particle filter for moving camera scenario
-    # Template location for the person with hat and white bag
-    template_rect = {'x': 150, 'y': 100, 'w': 80, 'h': 120}
-    
-    # Use MDParticleFilter for scale changes due to camera movement
-    pf = None
-    
-    # Process each frame
-    for frame_num, img_name in enumerate(img_list):
-        frame = cv2.imread(os.path.join(input_folder, img_name))
-        if frame is None:
-            continue
-        
-        # Initialize particle filter on first frame
-        if pf is None:
-            template = frame[template_rect['y']:template_rect['y']+template_rect['h'],
-                           template_rect['x']:template_rect['x']+template_rect['w']]
-            pf = ps5.MDParticleFilter(
-                frame, template,
-                num_particles=300,
-                sigma_exp=15.0,
-                sigma_dyn=12.0,
-                alpha=0.03,
-                template_coords=template_rect
-            )
-        else:
-            # Process frame with particle filter
-            pf.process(frame)
-            
-            # Get weighted mean position and scale
-            x_mean = np.sum(pf.particles[:, 0] * pf.weights)
-            y_mean = np.sum(pf.particles[:, 1] * pf.weights)
-            scale_mean = np.sum(pf.particles[:, 2] * pf.weights)
-            
-            # Draw tracking rectangle with scale
-            template_h, template_w = template.shape[:2]
-            new_h = int(template_h * scale_mean)
-            new_w = int(template_w * scale_mean)
-            
-            x1 = int(x_mean - new_w//2)
-            y1 = int(y_mean - new_h//2)
-            x2 = int(x_mean + new_w//2)
-            y2 = int(y_mean + new_h//2)
-            
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            
-            # Draw particles
-            for i in range(0, pf.num_particles, 5):  # Show every 5th particle
-                x, y = int(pf.particles[i, 0]), int(pf.particles[i, 1])
-                cv2.circle(frame, (x, y), 1, (255, 0, 0), -1)
-        
-        # Save specified frames
-        if frame_num in save_frames:
-            cv2.imwrite(save_frames[frame_num], frame)
-            print(f"Saved frame {frame_num} to {save_frames[frame_num]}")
-    
+    if not os.path.isdir(input_folder):
+        raise FileNotFoundError(f"Expected dataset folder at {input_folder}")
+
+    template_rect = {'x': 230, 'y': 60, 'w': 50, 'h': 120}
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    ps5.run_particle_filter(
+        ps5.MDParticleFilter,
+        input_folder,
+        template_rect,
+        save_frames,
+        num_particles=1200,
+        sigma_exp=8.0,
+        sigma_dyn=3.2,
+        alpha=0.0,
+        sigma_scale=0.016,
+        scale_bounds=(0.78, 1.18),
+        init_pos_std=5.0,
+        init_scale_std=0.028,
+        update_threshold=0.62,
+        update_warmup=40,
+        occlusion_gate=28.0,
+        scale_gate=0.12,
+        occlusion_weight_gate=0.12,
+        occlusion_jitter=4.0,
+        motion_alpha=0.8,
+        motion_max=10.0,
+        metric_color='color',
+        template_coords=template_rect
+    )
+
     print("Part 6 completed - Moving camera tracking")
 
 
 if __name__ == '__main__':
-    part_1b()
-    part_1c()
-    part_2a()
-    part_2b()
-    part_3()
+    # part_1b()
+    # part_1c()
+    # part_2a()
+    # part_2b()
+    # part_3()
     part_4()
     part_5()
     part_6()
