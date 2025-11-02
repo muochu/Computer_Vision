@@ -21,9 +21,57 @@ def load_images(folder, size=(32, 32)):
             y (numpy.array): 1D array of labels (int).
     """
 
-    images_files = [f for f in os.listdir(folder)]
-
-    raise NotImplementedError
+    images_files = [f for f in os.listdir(folder) if f.endswith('.png') or f.endswith('.jpg')]
+    images_files.sort()
+    
+    X = []
+    y = []
+    
+    for img_file in images_files:
+        img_path = os.path.join(folder, img_file)
+        img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+        if img is not None:
+            label = None
+            
+            # Extracting subject number 
+            subject_idx = img_file.lower().find('subject')
+            if subject_idx != -1:
+                num_start = subject_idx + len('subject')
+                num_str = ''
+                i = num_start
+                while i < len(img_file) and img_file[i].isdigit():
+                    num_str += img_file[i]
+                    i += 1
+                if num_str:
+                    try:
+                        label = int(num_str)
+                    except ValueError:
+                        pass
+            
+            # Fallback: extract first number found
+            if label is None:
+                num_str = ''
+                for char in img_file:
+                    if char.isdigit():
+                        num_str += char
+                    elif num_str:
+                        break
+                if num_str:
+                    try:
+                        label = int(num_str)
+                    except ValueError:
+                        pass
+            
+            if label is not None:
+                img_resized = cv2.resize(img, size)
+                img_flat = img_resized.flatten()
+                X.append(img_flat)
+                y.append(label)
+    
+    X = np.array(X, dtype=np.float32)
+    y = np.array(y, dtype=np.int32)
+    
+    return X, y
 
 
 def split_dataset(X, y, p):
@@ -48,7 +96,19 @@ def split_dataset(X, y, p):
             ytest (numpy.array): Test data labels.
     """
 
-    raise NotImplementedError
+    M = X.shape[0]
+    N = int(M * p)
+    
+    perm = np.random.permutation(M)
+    train_indices = perm[:N]
+    test_indices = perm[N:]
+    
+    Xtrain = X[train_indices]
+    ytrain = y[train_indices]
+    Xtest = X[test_indices]
+    ytest = y[test_indices]
+    
+    return Xtrain, ytrain, Xtest, ytest
 
 
 def get_mean_face(x):
@@ -63,7 +123,8 @@ def get_mean_face(x):
         numpy.array: Mean face.
     """
 
-    raise NotImplementedError
+    mean_face = np.mean(x, axis=0)
+    return mean_face
 
 
 def pca(X, k):
@@ -84,7 +145,17 @@ def pca(X, k):
             eigenvalues (numpy.array): array with the top k eigenvalues.
     """
 
-    raise NotImplementedError
+    mu = np.mean(X, axis=0)
+    X_centered = X - mu
+    Sigma = np.dot(X_centered.T, X_centered)
+    eig_vals, eig_vecs = np.linalg.eigh(Sigma)
+    idx = np.argsort(eig_vals)[::-1]
+    eig_vals = eig_vals[idx]
+    eig_vecs = eig_vecs[:, idx]
+    eig_vecs = eig_vecs[:, :k]
+    eig_vals = eig_vals[:k]
+    
+    return eig_vecs, eig_vals
 
 
 class Boosting:
