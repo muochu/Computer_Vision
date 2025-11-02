@@ -441,7 +441,60 @@ class HaarFeature:
             float: Score value.
         """
 
-        raise NotImplementedError
+        r, c = self.position
+        h, w = self.size
+        
+        def get_sum(ii, start_r, start_c, end_r, end_c):
+            start_r = max(0, start_r)
+            start_c = max(0, start_c)
+            end_r = min(ii.shape[0], end_r)
+            end_c = min(ii.shape[1], end_c)
+            
+            if start_r >= end_r or start_c >= end_c:
+                return 0.0
+            
+            val_br = ii[end_r-1, end_c-1]
+            val_tr = ii[start_r-1, end_c-1] if start_r > 0 else 0
+            val_bl = ii[end_r-1, start_c-1] if start_c > 0 else 0
+            val_tl = ii[start_r-1, start_c-1] if start_r > 0 and start_c > 0 else 0
+            return val_br - val_tr - val_bl + val_tl
+        
+        if self.feat_type == (2, 1):
+            half_h = h // 2
+            white_sum = get_sum(ii, r, c, r + half_h, c + w)
+            gray_sum = get_sum(ii, r + half_h, c, r + h, c + w)
+            return white_sum - gray_sum
+        
+        elif self.feat_type == (1, 2):
+            half_w = w // 2
+            white_sum = get_sum(ii, r, c, r + h, c + half_w)
+            gray_sum = get_sum(ii, r, c + half_w, r + h, c + w)
+            return white_sum - gray_sum
+        
+        elif self.feat_type == (3, 1):
+            third_h = h // 3
+            white_top = get_sum(ii, r, c, r + third_h, c + w)
+            gray_mid = get_sum(ii, r + third_h, c, r + 2*third_h, c + w)
+            white_bot = get_sum(ii, r + 2*third_h, c, r + h, c + w)
+            return white_top - gray_mid + white_bot
+        
+        elif self.feat_type == (1, 3):
+            third_w = w // 3
+            white_left = get_sum(ii, r, c, r + h, c + third_w)
+            gray_mid = get_sum(ii, r, c + third_w, r + h, c + 2*third_w)
+            white_right = get_sum(ii, r, c + 2*third_w, r + h, c + w)
+            return white_left - gray_mid + white_right
+        
+        elif self.feat_type == (2, 2):
+            half_h = h // 2
+            half_w = w // 2
+            top_left = get_sum(ii, r, c, r + half_h, c + half_w)
+            top_right = get_sum(ii, r, c + half_w, r + half_h, c + w)
+            bottom_left = get_sum(ii, r + half_h, c, r + h, c + half_w)
+            bottom_right = get_sum(ii, r + half_h, c + half_w, r + h, c + w)
+            return -top_left + top_right + bottom_left - bottom_right
+        
+        return 0.0
 
 
 def convert_images_to_integral_images(images):
@@ -454,7 +507,26 @@ def convert_images_to_integral_images(images):
         (list): List of integral images.
     """
 
-    raise NotImplementedError
+    integral_images = []
+    for img in images:
+        img_float = img.astype(np.float64)
+        h, w = img_float.shape
+        ii = np.zeros((h, w), dtype=np.float64)
+        
+        ii[0, 0] = img_float[0, 0]
+        for c in range(1, w):
+            ii[0, c] = ii[0, c-1] + img_float[0, c]
+        
+        for r in range(1, h):
+            ii[r, 0] = ii[r-1, 0] + img_float[r, 0]
+        
+        for r in range(1, h):
+            for c in range(1, w):
+                ii[r, c] = img_float[r, c] + ii[r-1, c] + ii[r, c-1] - ii[r-1, c-1]
+        
+        integral_images.append(ii)
+    
+    return integral_images
 
 
 class ViolaJones:
@@ -547,9 +619,24 @@ class ViolaJones:
         """
         self.init_train()
         print(" -- select classifiers --")
-        for i in range(num_classifiers):
-            # TODO: Complete the Viola Jones algorithm
-            raise NotImplementedError
+        for t in range(num_classifiers):
+            self.weights = self.weights / np.sum(self.weights)
+            hj = VJ_Classifier(self.scores, self.labels, self.weights)
+            hj.train()
+            epsilon_t = hj.error
+            
+            if epsilon_t <= 0:
+                epsilon_t = 1e-10
+            elif epsilon_t >= 1:
+                epsilon_t = 1 - 1e-10
+            
+            self.classifiers.append(hj)
+            beta_t = epsilon_t / (1 - epsilon_t)
+            h_predictions = np.array([hj.predict(self.scores[i]) for i in range(len(self.labels))])
+            e_i = (h_predictions != self.labels).astype(float)
+            self.weights = self.weights * (beta_t ** (1 - e_i))
+            alpha_t = np.log(1 / beta_t)
+            self.alphas.append(alpha_t)
 
 
     def predict(self, images):
@@ -561,30 +648,27 @@ class ViolaJones:
         Returns:
             list: Predictions, one for each element in images.
         """
-
         ii = convert_images_to_integral_images(images)
-
         scores = np.zeros((len(ii), len(self.haarFeatures)))
 
-        # Populate the score location for each classifier 'clf' in
-        # self.classifiers.
-
-        # Obtain the Haar feature id from clf.feature
-
-        # Use this id to select the respective feature object from
-        # self.haarFeatures
-
-        # Add the score value to score[x, feature id] calling the feature's
-        # evaluate function. 'x' is each image in 'ii'
+        for i, im in enumerate(ii):
+            for j, hf in enumerate(self.haarFeatures):
+                scores[i, j] = hf.evaluate(im)
 
         result = []
-
-        # Append the results for each row in 'scores'. This value is obtained
-        # using the equation for the strong classifier H(x).
-
+        sum_alphas = np.sum(self.alphas)
+        threshold = 0.5 * sum_alphas
+        
         for x in scores:
-            # TODO
-            raise NotImplementedError
+            weighted_sum = 0.0
+            for alpha, clf in zip(self.alphas, self.classifiers):
+                h_pred = clf.predict(x)
+                weighted_sum += alpha * h_pred
+            
+            if weighted_sum >= threshold:
+                result.append(1)
+            else:
+                result.append(-1)
 
         return result
 
