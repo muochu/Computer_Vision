@@ -278,7 +278,15 @@ class HaarFeature:
             numpy.array: Image containing a Haar feature. (uint8).
         """
 
-        raise NotImplementedError
+        img = np.zeros(shape, dtype=np.uint8)
+        r, c = self.position
+        h, w = self.size
+        
+        half_h = h // 2
+        img[r:r+half_h, c:c+w] = 255
+        img[r+half_h:r+h, c:c+w] = 126
+        
+        return img
 
     def _create_two_vertical_feature(self, shape):
         """Create a feature of type (1, 2).
@@ -292,7 +300,15 @@ class HaarFeature:
             numpy.array: Image containing a Haar feature. (uint8).
         """
 
-        raise NotImplementedError
+        img = np.zeros(shape, dtype=np.uint8)
+        r, c = self.position
+        h, w = self.size
+        
+        half_w = w // 2
+        img[r:r+h, c:c+half_w] = 255
+        img[r:r+h, c+half_w:c+w] = 126
+        
+        return img
 
     def _create_three_horizontal_feature(self, shape):
         """Create a feature of type (3, 1).
@@ -306,7 +322,16 @@ class HaarFeature:
             numpy.array: Image containing a Haar feature. (uint8).
         """
 
-        raise NotImplementedError
+        img = np.zeros(shape, dtype=np.uint8)
+        r, c = self.position
+        h, w = self.size
+        
+        third_h = h // 3
+        img[r:r+third_h, c:c+w] = 255
+        img[r+third_h:r+2*third_h, c:c+w] = 126
+        img[r+2*third_h:r+h, c:c+w] = 255
+        
+        return img
 
     def _create_three_vertical_feature(self, shape):
         """Create a feature of type (1, 3).
@@ -320,7 +345,16 @@ class HaarFeature:
             numpy.array: Image containing a Haar feature. (uint8).
         """
 
-        raise NotImplementedError
+        img = np.zeros(shape, dtype=np.uint8)
+        r, c = self.position
+        h, w = self.size
+        
+        third_w = w // 3
+        img[r:r+h, c:c+third_w] = 255
+        img[r:r+h, c+third_w:c+2*third_w] = 126
+        img[r:r+h, c+2*third_w:c+w] = 255
+        
+        return img
 
     def _create_four_square_feature(self, shape):
         """Create a feature of type (2, 2).
@@ -334,7 +368,18 @@ class HaarFeature:
             numpy.array: Image containing a Haar feature. (uint8).
         """
 
-        raise NotImplementedError
+        img = np.zeros(shape, dtype=np.uint8)
+        r, c = self.position
+        h, w = self.size
+        
+        half_h = h // 2
+        half_w = w // 2
+        img[r:r+half_h, c:c+half_w] = 126
+        img[r:r+half_h, c+half_w:c+w] = 255
+        img[r+half_h:r+h, c:c+half_w] = 255
+        img[r+half_h:r+h, c+half_w:c+w] = 126
+        
+        return img
 
     def preview(self, shape=(24, 24), filename=None):
         """Return an image with a Haar-like feature of a given type.
@@ -354,26 +399,23 @@ class HaarFeature:
             numpy.array: Array containing a Haar feature (float or uint8).
         """
 
-        if self.feat_type == (2, 1):  # two_horizontal
+        if self.feat_type == (2, 1):
             X = self._create_two_horizontal_feature(shape)
-
-        if self.feat_type == (1, 2):  # two_vertical
+        elif self.feat_type == (1, 2):
             X = self._create_two_vertical_feature(shape)
-
-        if self.feat_type == (3, 1):  # three_horizontal
+        elif self.feat_type == (3, 1):
             X = self._create_three_horizontal_feature(shape)
-
-        if self.feat_type == (1, 3):  # three_vertical
+        elif self.feat_type == (1, 3):
             X = self._create_three_vertical_feature(shape)
-
-        if self.feat_type == (2, 2):  # four_square
+        elif self.feat_type == (2, 2):
             X = self._create_four_square_feature(shape)
-
-        if filename is None:
-            cv2.imwrite("output/{}_feature.png".format(self.feat_type), X)
-
         else:
-            cv2.imwrite("output/{}.png".format(filename), X)
+            X = np.zeros(shape, dtype=np.uint8)
+
+        if filename is not None:
+            if not filename.endswith('.png'):
+                filename = filename + '.png'
+            cv2.imwrite(filename, X)
 
         return X
 
