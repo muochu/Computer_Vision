@@ -790,8 +790,11 @@ class CascadeClassifier:
             Return 1 (face detected) or -1 (no face detected) 
         """
 
-        # TODO
-        raise NotImplementedError
+        for classifier in classifiers:
+            predictions = classifier.predict([img])
+            if predictions[0] == -1:
+                return -1
+        return 1
 
     def evaluate_classifiers(self, pos, neg, classifiers):
         """ 
@@ -810,8 +813,25 @@ class CascadeClassifier:
             false_positives (list): list of false positive images
         """
 
-        # TODO
-        raise NotImplementedError
+        false_positives = 0
+        false_positive_images = []
+        for img in neg:
+            pred = self.predict(classifiers, img)
+            if pred == 1:
+                false_positives += 1
+                false_positive_images.append(img)
+        
+        f = float(false_positives) / len(neg) if len(neg) > 0 else 0.0
+        
+        true_positives = 0
+        for img in pos:
+            pred = self.predict(classifiers, img)
+            if pred == 1:
+                true_positives += 1
+        
+        d = float(true_positives) / len(pos) if len(pos) > 0 else 0.0
+        
+        return f, d, false_positive_images
 
     def train(self):
         """ 
@@ -826,8 +846,44 @@ class CascadeClassifier:
             None
              
         """
-        # TODO
-        raise NotImplementedError
+        f = 1.0
+        f_last = 1.0
+        d = 1.0
+        d_last = 1.0
+        i = 0
+        
+        train_pos = self.train_pos
+        train_neg = self.train_neg
+        
+        while f > self.f_target:
+            integral_images = convert_images_to_integral_images(train_pos + train_neg)
+            vj = ViolaJones(train_pos, train_neg, integral_images)
+            vj.createHaarFeatures()
+            
+            i += 1
+            ni = 0
+            
+            while f > self.f_max_rate * f_last:
+                ni += 1
+                vj.train(ni)
+                current_classifiers = self.classifiers + [vj]
+                f, d, _ = self.evaluate_classifiers(self.validate_pos, self.validate_neg, current_classifiers)
+                
+                while d < self.d_min_rate * d_last:
+                    vj.threshold *= 0.9
+                    f, d, _ = self.evaluate_classifiers(self.validate_pos, self.validate_neg, current_classifiers)
+                    if d >= self.d_min_rate * d_last:
+                        break
+            
+            f_last = f
+            d_last = d
+            self.classifiers.append(vj)
+            _, _, false_positives = self.evaluate_classifiers(self.validate_pos, self.validate_neg, self.classifiers)
+            
+            if len(false_positives) > 0:
+                train_neg = train_neg + false_positives[:min(len(false_positives), len(train_neg))]
+            
+            f, d, _ = self.evaluate_classifiers(self.validate_pos, self.validate_neg, self.classifiers)
 
 
     def faceDetection(self, image, filename="ps6-5-b-1.jpg"):
@@ -845,4 +901,21 @@ class CascadeClassifier:
         Returns:
             None.
         """
-        raise NotImplementedError
+        if len(image.shape) == 3:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = image.copy()
+        
+        h, w = gray.shape
+        window_size = 24
+        result_image = image.copy() if len(image.shape) == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        
+        for y in range(0, h - window_size + 1, 4):
+            for x in range(0, w - window_size + 1, 4):
+                window = gray[y:y+window_size, x:x+window_size]
+                pred = self.predict(self.classifiers, window)
+                if pred == 1:
+                    cv2.rectangle(result_image, (x, y), (x+window_size, y+window_size), (0, 255, 0), 2)
+        
+        if filename:
+            cv2.imwrite(filename + ".png", result_image)
