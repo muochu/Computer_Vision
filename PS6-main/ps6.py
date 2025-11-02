@@ -688,7 +688,49 @@ class ViolaJones:
             None.
         """
 
-        raise NotImplementedError
+        if len(image.shape) == 3:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = image.copy()
+        
+        h, w = gray.shape
+        window_size = 24
+        result_image = image.copy() if len(image.shape) == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        
+        detections = []
+        for y in range(0, h - window_size + 1, 4):
+            for x in range(0, w - window_size + 1, 4):
+                window = gray[y:y+window_size, x:x+window_size]
+                predictions = self.predict([window])
+                if predictions[0] == 1:
+                    detections.append((x, y, x+window_size, y+window_size))
+        
+        # Non-maximum suppression
+        final_detections = []
+        for det in detections:
+            x1, y1, x2, y2 = det
+            overlap = False
+            for fx1, fy1, fx2, fy2 in final_detections:
+                overlap_x1 = max(x1, fx1)
+                overlap_y1 = max(y1, fy1)
+                overlap_x2 = min(x2, fx2)
+                overlap_y2 = min(y2, fy2)
+                
+                if overlap_x1 < overlap_x2 and overlap_y1 < overlap_y2:
+                    overlap_area = (overlap_x2 - overlap_x1) * (overlap_y2 - overlap_y1)
+                    det_area = (x2 - x1) * (y2 - y1)
+                    if overlap_area > 0.5 * det_area:
+                        overlap = True
+                        break
+            
+            if not overlap:
+                final_detections.append(det)
+        
+        for x1, y1, x2, y2 in final_detections:
+            cv2.rectangle(result_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        
+        if filename:
+            cv2.imwrite(filename + ".png", result_image)
 
 class CascadeClassifier:
     """Viola Jones Cascade Classifier Face Detection Method
