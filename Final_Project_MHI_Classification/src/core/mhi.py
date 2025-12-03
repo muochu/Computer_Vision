@@ -9,10 +9,46 @@ def frame_difference(frame1, frame2, threshold=30):
     return (diff >= threshold).astype(np.uint8) * 255
 
 
-def morphological_open(binary_image, kernel_size=3):
-    """Apply morphological opening for noise removal."""
+def morphological_erode(binary_image, kernel_size=3):
+    """Apply morphological erosion (from scratch)."""
+    height, width = binary_image.shape
     kernel = np.ones((kernel_size, kernel_size), np.uint8)
-    return cv2.morphologyEx(binary_image, cv2.MORPH_OPEN, kernel)
+    k_half = kernel_size // 2
+    eroded = np.zeros_like(binary_image)
+    
+    for y in range(k_half, height - k_half):
+        for x in range(k_half, width - k_half):
+            region = binary_image[y - k_half:y + k_half + 1, 
+                                  x - k_half:x + k_half + 1]
+            if np.all(region == 255):
+                eroded[y, x] = 255
+    
+    return eroded
+
+
+def morphological_dilate(binary_image, kernel_size=3):
+    """Apply morphological dilation (from scratch)."""
+    height, width = binary_image.shape
+    kernel = np.ones((kernel_size, kernel_size), np.uint8)
+    k_half = kernel_size // 2
+    dilated = np.zeros_like(binary_image)
+    
+    for y in range(height):
+        for x in range(width):
+            if binary_image[y, x] == 255:
+                y_min = max(0, y - k_half)
+                y_max = min(height, y + k_half + 1)
+                x_min = max(0, x - k_half)
+                x_max = min(width, x + k_half + 1)
+                dilated[y_min:y_max, x_min:x_max] = 255
+    
+    return dilated
+
+
+def morphological_open(binary_image, kernel_size=3):
+    """Apply morphological opening (erosion followed by dilation) from scratch."""
+    eroded = morphological_erode(binary_image, kernel_size)
+    return morphological_dilate(eroded, kernel_size)
 
 
 def create_mhi(frames, tau=15, theta=30, use_morphology=True):
