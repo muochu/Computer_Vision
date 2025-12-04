@@ -65,3 +65,4 @@ def load_all_data(data_dir, sequences_info):
     
     return data, labels
 
+

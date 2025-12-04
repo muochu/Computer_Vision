@@ -1,52 +1,57 @@
-# Data files
+# Data files (videos are large, exclude from repo)
 *.avi
 data/**/*.avi
+data/**/*.mp4
 
-# Python
+# Python cache
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
 
-# Results and outputs
-results/*.pkl
-results/*.png
-outputs/**/*.png
-outputs/**/*.mp4
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Report files
-report_draft.txt
-image_checklist.txt
-*.tex
-report.pdf
-
-# Helper/checklist files (don't commit these)
-*_CHECKLIST.txt
-*_SUMMARY.txt
-*_PROGRESS.txt
-*_READY.txt
-
-# Results directory (keep structure but ignore generated files)
+# Generated results and outputs (exclude from repo)
 results/*.pkl
 results/*.png
 results/*.jpg
 results/*.jpeg
-
-# Outputs directory (keep structure but ignore generated files)
 outputs/**/*.png
 outputs/**/*.jpg
 outputs/**/*.jpeg
 outputs/**/*.mp4
 outputs/**/*.avi
+
+# Log files
+*.log
+training.log
+*.log.*
+
+# Report drafts and generated files
+report_draft*.txt
+*.tex
+report.pdf
+*.pdf
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+._*
+
+# Helper/checklist files
+*_CHECKLIST.txt
+*_SUMMARY.txt
+*_PROGRESS.txt
+*_READY.txt
+*_GUIDE.md
+
+# Submission files
+submission/
+submission*.zip
+*_Code.zip
 

@@ -4,7 +4,7 @@ Motion History Image (MHI) based activity classification system for recognizing 
 
 ## Requirements
 
-- Python 3.7+
+- Python 3.7 or higher
 - OpenCV (`cv2`)
 - NumPy
 - Scikit-Learn
@@ -42,8 +42,10 @@ python src/main.py --data_dir data --seq_file 00sequence.txt --tau 15 --theta 30
 Predict action on an arbitrary video:
 
 ```bash
-python src/predict.py path/to/video.avi --classifier results/classifier.pkl
+python src/predict.py path/to/video.avi --classifier results/classifier.pkl --use_scaled
 ```
+
+**Note**: The video path can be relative or absolute. The classifier path is relative to the project root. Use `--output_mhi` to save the generated MHI image.
 
 ## Implementation Details
 

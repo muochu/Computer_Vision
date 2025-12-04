@@ -71,3 +71,4 @@ def get_all_sequences(seq_file_path):
     
     return all_sequences
 
+

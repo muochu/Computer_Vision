@@ -65,3 +65,4 @@ def extract_features(mhi, use_scaled=True):
     
     return np.array(moments, dtype=np.float32)
 
+
